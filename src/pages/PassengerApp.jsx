@@ -8,7 +8,7 @@ const RIO_GALLEGOS_CENTER = [-69.2135, -51.623];
 
 // ─── FONTS & GLOBAL STYLES ───────────────────────────────────────────────────
 const GLOBAL_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   body { background: #f5f5f0; font-family: 'Plus Jakarta Sans', sans-serif; }
   input::placeholder { color: #bbb; }
@@ -176,7 +176,7 @@ function ArrivedScreen({ trip, driver }) {
       {/* Top verde */}
       <div style={{ background:"#a8e63d", padding:"48px 24px 32px", textAlign:"center", animation:"fadeIn .4s ease" }}>
         <div style={{ fontSize:72, animation:"bounceY .9s ease infinite", marginBottom:12 }}>🚗</div>
-        <div style={{ fontFamily:"'Syne',sans-serif", fontSize:38, fontWeight:800, color:"#1a2800", lineHeight:1.1 }}>¡Tu auto<br/>llegó!</div>
+        <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:30, fontWeight:800, color:"#1a2800", lineHeight:1.1 }}>¡Tu auto<br/>llegó!</div>
         <div style={{ color:"#1a280099", fontSize:14, marginTop:8, fontWeight:500 }}>Salí que te está esperando afuera</div>
       </div>
 
@@ -186,7 +186,7 @@ function ArrivedScreen({ trip, driver }) {
         {/* Patente destacada */}
         <div className="su" style={{ background:"#f5f5f0", borderRadius:18, padding:"20px 24px", textAlign:"center", border:"2px solid #a8e63d" }}>
           <div style={{ color:"#aaa", fontSize:10, letterSpacing:2, fontWeight:700, marginBottom:8 }}>BUSCÁ ESTE AUTO</div>
-          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:46, fontWeight:800, color:"#1a2800", letterSpacing:6 }}>{driver.plate}</div>
+          <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:32, fontWeight:800, color:"#1a2800", letterSpacing:3 }}>{driver.plate}</div>
           <div style={{ color:"#888", fontSize:13, marginTop:6 }}>{driver.model_name} {driver.model_year}</div>
         </div>
 
@@ -204,7 +204,7 @@ function ArrivedScreen({ trip, driver }) {
           </div>
           <div style={{ textAlign:"right" }}>
             <div style={{ color:"#aaa", fontSize:11 }}>Total</div>
-            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:800, color:"#1a2800" }}>${trip.fare.toLocaleString("es-AR")}</div>
+            <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:22, fontWeight:800, color:"#1a2800" }}>${trip.fare.toLocaleString("es-AR")}</div>
           </div>
         </div>
 
@@ -255,7 +255,7 @@ function WaitingScreen({ trip, driver, onCancel }) {
 
       {/* Header */}
       <div style={{ background:"#fff", padding:"16px 20px", display:"flex", alignItems:"center", gap:12, borderBottom:"1px solid #f0f0e8" }}>
-        <div style={{ fontFamily:"'Syne',sans-serif", fontSize:20, fontWeight:800, color:"#1a2800" }}>intaxis</div>
+        <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:20, fontWeight:800, color:"#1a2800" }}>intaxis</div>
         <div style={{ flex:1 }} />
         <div style={{ background:"#f0f9e0", borderRadius:20, padding:"4px 12px", display:"flex", alignItems:"center", gap:6 }}>
           <div style={{ width:7, height:7, borderRadius:"50%", background:"#a8e63d", boxShadow:"0 0 0 0 rgba(168,230,61,.4)", animation:"pulseRing 1.2s ease infinite" }} />
@@ -286,7 +286,7 @@ function WaitingScreen({ trip, driver, onCancel }) {
         {/* Countdown */}
         <div style={{ textAlign:"center", marginBottom:24 }}>
           <div style={{ color:"#bbb", fontSize:11, letterSpacing:2, fontWeight:700, marginBottom:6 }}>LLEGA EN</div>
-          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:64, fontWeight:800, color:"#1a2800", lineHeight:1 }}>
+          <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:52, fontWeight:800, color:"#1a2800", lineHeight:1 }}>
             {mins > 0 ? `${mins}:${secs.toString().padStart(2,"0")}` : `${secs}s`}
           </div>
           <div style={{ color:"#bbb", fontSize:13, marginTop:4 }}>
@@ -315,7 +315,7 @@ function WaitingScreen({ trip, driver, onCancel }) {
           </div>
           <div style={{ textAlign:"right" }}>
             <div style={{ color:"#aaa", fontSize:11 }}>Patente</div>
-            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:800, color:"#1a2800", letterSpacing:1 }}>{driver.plate}</div>
+            <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:15, fontWeight:800, color:"#1a2800", letterSpacing:1 }}>{driver.plate}</div>
           </div>
         </div>
 
@@ -439,7 +439,7 @@ export default function IntaxisPassenger() {
         <MapPlaceholder />
         {/* Header flotante sobre el mapa */}
         <div style={{ position:"absolute", top:0, left:0, right:0, padding:"16px 20px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:800, color:"#1a2800", background:"rgba(255,255,255,.9)", backdropFilter:"blur(8px)", borderRadius:12, padding:"6px 14px" }}>
+          <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:22, fontWeight:800, color:"#1a2800", background:"rgba(255,255,255,.9)", backdropFilter:"blur(8px)", borderRadius:12, padding:"6px 14px" }}>
             intaxis
           </div>
           <div style={{ background:"rgba(255,255,255,.9)", backdropFilter:"blur(8px)", borderRadius:12, padding:"6px 12px", display:"flex", alignItems:"center", gap:6 }}>
@@ -525,7 +525,7 @@ export default function IntaxisPassenger() {
             <div style={{ background:"linear-gradient(135deg,#f5fce8,#eef7d8)", border:"1.5px solid #d0eaa0", borderRadius:18, padding:"20px 20px", marginBottom:14, textAlign:"center" }}>
               
               <div style={{ color:"#7aaa20", fontSize:11, letterSpacing:2, fontWeight:700, marginBottom:4 }}>PRECIO FIJO</div>
-              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:54, fontWeight:800, color:"#1a2800", lineHeight:1 }}>
+              <div style={{ fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:44, fontWeight:800, color:"#1a2800", lineHeight:1 }}>
                 ${fareResult.fare.toLocaleString("es-AR")}
               </div>
               <div style={{ color:"#aabf88", fontSize:12, marginTop:4 }}>Sin sorpresas · Precio confirmado</div>
@@ -568,7 +568,7 @@ export default function IntaxisPassenger() {
 
             {/* BOTÓN CONFIRMAR */}
             <button className="confirm-btn" onClick={handleConfirm} disabled={!canConfirm}
-              style={{ width:"100%", background: canConfirm?"#a8e63d":"#f0f0e8", border:"none", borderRadius:16, padding:"16px", fontFamily:"'Syne',sans-serif", fontSize:16, fontWeight:800, color: canConfirm?"#1a2800":"#ccc", letterSpacing:.5 }}>
+              style={{ width:"100%", background: canConfirm?"#a8e63d":"#f0f0e8", border:"none", borderRadius:16, padding:"16px", fontFamily:"'Plus Jakarta Sans',sans-serif", fontSize:16, fontWeight:800, color: canConfirm?"#1a2800":"#ccc", letterSpacing:.5 }}>
               {!canConfirm && mode==="other" && !forName.trim() ? "Ingresá el nombre del pasajero" : "Pedir viaje →"}
             </button>
           </div>
