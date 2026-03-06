@@ -16,13 +16,3 @@ export default function App() {
 
   return <PassengerApp />
 }
-```
-
-Y en `SplashScreen.jsx` también hay un problema — el componente se llama `IntaxisSplash` pero necesita llamarse `SplashScreen`. Entrá a `src/pages/SplashScreen.jsx` → lápiz → buscá la última línea que dice:
-```
-export default function IntaxisSplash
-```
-
-Cambiala a:
-```
-export default function SplashScreen
