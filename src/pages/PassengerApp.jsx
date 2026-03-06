@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://fubpzfpystsxmgpqjjol.supabase.co";
 const SUPABASE_KEY = "sb_publishable_VJFvgF0mb-Y4jBsL72Gr7w_mx_BCVB1";
-const MAPBOX_TOKEN = "pk.eyJ1IjoiaW50YXhpcyIsImEiOiJjbW1lNXY5OHgwYW11MnBwdHNsYzZhZjVuIn0.fQCMgvc5q3qwuEhPo7wgzg";
+const MAPBOX_TOKEN = "pk.eyJ1IjoiaW50YXhpcyIsImEiOiJjbW1lOXBpM2QwN3IyMnRvc2VmNTNhb3pyIn0.rw-kVLlVXVFSmASAS0Y5Cw";
 const RIO_GALLEGOS_CENTER = [-69.2135, -51.623];
 
 // ─── FONTS & GLOBAL STYLES ───────────────────────────────────────────────────
@@ -334,13 +334,7 @@ function WaitingScreen({ trip, driver, onCancel }) {
           ))}
         </div>
 
-        {/* Tarifa nocturna */}
-        {trip.isNight && (
-          <div style={{ background:"#fffbf0", borderRadius:12, padding:"10px 14px", display:"flex", gap:8, alignItems:"center", marginBottom:16, border:"1px solid #ffe9a0" }}>
-            <span style={{ fontSize:15 }}>🌙</span>
-            <span style={{ color:"#997700", fontSize:13, fontWeight:600 }}>Tarifa nocturna aplicada (+30%)</span>
-          </div>
-        )}
+
 
         {/* Para otra persona */}
         {trip.forName && (
@@ -529,11 +523,7 @@ export default function IntaxisPassenger() {
           <div className="su">
             {/* Precio */}
             <div style={{ background:"linear-gradient(135deg,#f5fce8,#eef7d8)", border:"1.5px solid #d0eaa0", borderRadius:18, padding:"20px 20px", marginBottom:14, textAlign:"center" }}>
-              {fareResult.isNight && (
-                <div style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#fffbf0", border:"1px solid #ffe9a0", borderRadius:20, padding:"4px 12px", marginBottom:12, fontSize:11, fontWeight:700, color:"#997700" }}>
-                  🌙 Tarifa nocturna
-                </div>
-              )}
+              
               <div style={{ color:"#7aaa20", fontSize:11, letterSpacing:2, fontWeight:700, marginBottom:4 }}>PRECIO FIJO</div>
               <div style={{ fontFamily:"'Syne',sans-serif", fontSize:54, fontWeight:800, color:"#1a2800", lineHeight:1 }}>
                 ${fareResult.fare.toLocaleString("es-AR")}
