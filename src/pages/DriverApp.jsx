@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://fubpzfpystsxmgpqjjol.supabase.co";
 const SUPABASE_KEY = "sb_publishable_VJFvgF0mb-Y4jBsL72Gr7w_mx_BCVB1";
-const MAPBOX_TOKEN = "pk.eyJ1IjoiaW50YXhpcyIsImEiOiJjbW1lNXY5OHgwYW11MnBwdHNsYzZhZjVuIn0.fQCMgvc5q3qwuEhPo7wgzg";
+const MAPBOX_TOKEN = "pk.eyJ1IjoiaW50YXhpcyIsImEiOiJjbW1lOXBpM2QwN3IyMnRvc2VmNTNhb3pyIn0.rw-kVLlVXVFSmASAS0Y5Cw";
 const PLATFORM_COMMISSION = 0.12;
 
 // ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
