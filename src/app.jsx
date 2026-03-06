@@ -1,21 +1,18 @@
 import { useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
-import SplashScreen from '@/pages/SplashScreen'
-import PassengerApp from '@/pages/PassengerApp'
-import DriverApp    from '@/pages/DriverApp'
+import SplashScreen from './pages/SplashScreen.jsx'
+import PassengerApp from './pages/PassengerApp.jsx'
+import DriverApp from './pages/DriverApp.jsx'
 
 export default function App() {
-  const [splashDone, setSplashDone] = useState(false)
+  const [screen, setScreen] = useState('splash')
 
-  if (!splashDone) return <SplashScreen onDone={() => setSplashDone(true)} />
+  if (screen === 'splash') {
+    return <SplashScreen onDone={() => setScreen('passenger')} />
+  }
 
-  return (
-    <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh' }}>
-      <Routes>
-        <Route path="/"       element={<PassengerApp />} />
-        <Route path="/chofer" element={<DriverApp />} />
-        <Route path="*"       element={<Navigate to="/" replace />} />
-      </Routes>
-    </div>
-  )
+  if (screen === 'driver') {
+    return <DriverApp />
+  }
+
+  return <PassengerApp />
 }
