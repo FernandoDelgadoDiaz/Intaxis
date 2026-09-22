@@ -7,6 +7,7 @@ if (!process.env.OPENAI_API_KEY) throw new Error('Falta OPENAI_API_KEY.');
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const VALID_SPECIALIST_KEYS = new Set(specialistKeys());
 const ACTION_MARKER = 'AGENTIC_ACTIONS_JSON:';
+const MAX_SPECIALISTS_PER_MISSION = 3;
 const ACTION_TYPES = [
   'market_research',
   'create_content_draft',
@@ -158,7 +159,7 @@ function fallbackPlan(mission) {
   if (/evidencia|compar|contradic|fuente|validar|decisi|informe/.test(text)) add('information_decisions', 'Auditar evidencia, contradicciones y datos faltantes.');
 
   if (!planned.length) add('information_decisions', 'Determinar qué evidencia existe, qué falta y qué especialistas adicionales serían necesarios.');
-  return { specialists: planned.slice(0, 4), rationale: 'Plan de contingencia determinístico porque el plan del Director no pudo interpretarse.' };
+  return { specialists: planned.slice(0, MAX_SPECIALISTS_PER_MISSION), rationale: 'Plan de contingencia determinístico porque el plan del Director no pudo interpretarse.' };
 }
 
 function parsePlan(raw, mission) {
@@ -171,14 +172,14 @@ function parsePlan(raw, mission) {
       : [];
     if (!specialists.length) return fallbackPlan(mission);
     const deduped = specialists.filter((item, index, array) => array.findIndex((other) => other.key === item.key) === index);
-    return { specialists: deduped.slice(0, 7), rationale: String(parsed?.rationale || '').trim() };
+    return { specialists: deduped.slice(0, MAX_SPECIALISTS_PER_MISSION), rationale: String(parsed?.rationale || '').trim() };
   } catch {
     return fallbackPlan(mission);
   }
 }
 
 function planPrompt(mission, businessContext) {
-  return `MODO PLAN\n\nESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN DEL PROPIETARIO\n${mission}\n\nElegí sólo especialistas cuyo trabajo pueda cambiar materialmente la decisión. Cada task debe ser concreta y no duplicar a otra especialidad. Evitá costo tecnológico innecesario.`;
+  return `MODO PLAN\n\nESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN DEL PROPIETARIO\n${mission}\n\nElegí sólo especialistas cuyo trabajo pueda cambiar materialmente la decisión. Cada task debe ser concreta y no duplicar a otra especialidad. Evitá costo tecnológico innecesario. Activá como máximo ${MAX_SPECIALISTS_PER_MISSION} especialistas por misión.`;
 }
 
 function specialistPrompt({ mission, businessContext, task, specialistName }) {
