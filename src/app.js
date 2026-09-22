@@ -4,17 +4,17 @@ import { chatRouter } from './routes/chat.js';
 import { exportRouter } from './routes/export.js';
 
 export const app = express();
-export const BUILD_VERSION = '0.3.2-chat-query';
+export const BUILD_VERSION = '0.3.3-chat-query-direct';
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.text({ type: 'text/plain', limit: '1mb' }));
 
-// Netlify/serverless fallback: if the request body is lost before Express parses it,
-// preserve the Director mission from the query string. The normal body formats remain supported.
+// Netlify puede reescribir /api/chat antes de que Express vea la ruta original.
+// Por eso no dependemos de req.path: cualquier POST que transporte `mensaje`
+// en query puede reconstruir el body si el adaptador serverless lo perdió.
 app.use((req, _res, next) => {
   if (
     req.method === 'POST' &&
-    req.path === '/api/chat' &&
     typeof req.query?.mensaje === 'string' &&
     (
       req.body == null ||
