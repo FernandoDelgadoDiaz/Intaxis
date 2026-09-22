@@ -1,0 +1,21 @@
+name: Agentic Pymes chat query smoke
+
+on:
+  pull_request:
+    paths:
+      - 'src/app.js'
+      - 'docs/BUGFIX_CHAT_QUERY_0_3_3.md'
+      - '.github/workflows/chat-query-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Verify chat query fallback source
+        run: |
+          node -e "const fs=require('fs'); const s=fs.readFileSync('src/app.js','utf8'); if(!s.includes(\"typeof req.query?.mensaje === 'string'\")) process.exit(1); if(s.includes(\"req.path === '/api/chat'\")) process.exit(1); if(!s.includes('0.3.3-chat-query-direct')) process.exit(1);"
