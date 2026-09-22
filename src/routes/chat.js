@@ -12,6 +12,14 @@ import {
 export const chatRouter = Router();
 const clean = (value) => String(value || '').trim();
 
+function missionFromRequest(req) {
+  if (typeof req.body === 'string') return clean(req.body);
+  if (req.body && typeof req.body === 'object') {
+    return clean(req.body.mensaje ?? req.body.mission ?? req.body.message);
+  }
+  return '';
+}
+
 async function mapWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -60,7 +68,7 @@ chatRouter.get('/team', async (req, res) => {
 });
 
 chatRouter.post('/chat', async (req, res) => {
-  const mission = clean(req.body?.mensaje);
+  const mission = missionFromRequest(req);
   if (!mission) return res.status(400).json({ error: 'Escribí una misión para el Director.' });
   if (mission.length > 6000) return res.status(400).json({ error: 'La misión supera los 6000 caracteres.' });
 
