@@ -4,6 +4,7 @@ let supabase;
 let configPromise;
 let observedMessagesNode = null;
 const pollers = new Set();
+const runDetailsCache = new Map();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -46,11 +47,133 @@ async function request(path, options = {}) {
   return { ok: true, status: response.status };
 }
 
-function addMessage(container, role, text, extraClass = '') {
+async function copyText(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+  }
+  if (button) {
+    const previous = button.textContent;
+    button.textContent = 'Copiado';
+    setTimeout(() => { button.textContent = previous; }, 1400);
+  }
+}
+
+function excelRelevant(text) {
+  const value = String(text || '');
+  const hasMarkdownTable = /^\s*\|.+\|\s*$/m.test(value) && /^\s*\|?\s*:?-{3,}/m.test(value);
+  if (hasMarkdownTable) return true;
+  const numericLines = value.split(/\r?\n/).filter((line) => /\d/.test(line)).length;
+  const businessData = /(costo|precio|margen|stock|capacidad|venta|pedido|cantidad|unidades|conversi[oó]n|rentabilidad|ingreso|gasto|m[eé]trica|porcentaje|%|usd|\$)/i.test(value);
+  return businessData && numericLines >= 3;
+}
+
+async function exportExcel(text, button) {
+  const token = await authToken();
+  if (!token) throw new Error('Necesitás iniciar sesión.');
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch('/api/exportar/excel', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ contenido: text }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || `Error ${response.status}`);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const name = match?.[1] || 'Agentic_Pymes_Informe.xlsx';
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function addMessage(container, role, text, extraClass = '', options = {}) {
+  if (role !== 'assistant' || options.controls === false) {
+    const node = document.createElement('div');
+    node.className = `message ${role}${extraClass ? ` ${extraClass}` : ''}`;
+    node.textContent = text;
+    container.appendChild(node);
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'assistant-response';
+
   const node = document.createElement('div');
-  node.className = `message ${role}${extraClass ? ` ${extraClass}` : ''}`;
+  node.className = `message assistant${extraClass ? ` ${extraClass}` : ''}`;
   node.textContent = text;
-  container.appendChild(node);
+  wrap.appendChild(node);
+
+  const controls = document.createElement('div');
+  controls.className = 'message-actions';
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'message-action';
+  copy.textContent = 'Copiar';
+  copy.addEventListener('click', () => copyText(text, copy));
+  controls.appendChild(copy);
+
+  if (excelRelevant(text)) {
+    const excel = document.createElement('button');
+    excel.type = 'button';
+    excel.className = 'message-action';
+    excel.textContent = 'Exportar Excel';
+    excel.addEventListener('click', async () => {
+      try {
+        await exportExcel(text, excel);
+      } catch (error) {
+        const previous = excel.textContent;
+        excel.textContent = error.message || 'Error al exportar';
+        setTimeout(() => { excel.textContent = previous; }, 2200);
+      }
+    });
+    controls.appendChild(excel);
+  }
+
+  wrap.appendChild(controls);
+  container.appendChild(wrap);
+}
+
+function executionEvidence(actions) {
+  if (!Array.isArray(actions) || !actions.length) return '';
+  const lines = ['## Ejecución verificada del motor de autonomía'];
+  for (const action of actions) {
+    const decision = action.policy_decision || 'sin decisión';
+    const status = action.status || 'sin estado';
+    const automatic = action.requires_human === false ? 'sin intervención humana' : 'con intervención humana';
+    lines.push(`- **${action.action_type || 'acción'}** — ${status}; política: ${decision}; ${automatic}.`);
+    if (action.policy_reason) lines.push(`  Motivo: ${action.policy_reason}`);
+    if (action.execution_result?.content_item_id) lines.push(`  Borrador creado: ${action.execution_result.content_item_id}`);
+    if (action.execution_result?.operation_task_id) lines.push(`  Orden/tarea creada: ${action.execution_result.operation_task_id}`);
+    if (action.execution_result?.order_id) lines.push(`  Pedido creado: ${action.execution_result.order_id}`);
+    if (action.execution_result?.payment_id) lines.push(`  Pago: ${action.execution_result.payment_id}`);
+    if (action.error_message) lines.push(`  Error: ${action.error_message}`);
+  }
+  return lines.join('\n');
 }
 
 function statusForRun(run) {
@@ -58,7 +181,25 @@ function statusForRun(run) {
   if (run.status === 'running') return 'El Director y los especialistas están trabajando. Podés dejar la pantalla en reposo; el trabajo continúa en segundo plano.';
   if (run.status === 'failed') return `Error: ${run.error_message || 'La misión no pudo completarse.'}`;
   if (run.status === 'cancelled') return 'Misión cancelada.';
-  return run.result_summary || 'Misión completada.';
+  const base = run.result_summary || 'Misión completada.';
+  const evidence = executionEvidence(run.actions);
+  return evidence ? `${base}\n\n${evidence}` : base;
+}
+
+async function enrichCompletedRuns(runs) {
+  return Promise.all((runs || []).map(async (run) => {
+    if (run.status !== 'completed') return run;
+    const cacheKey = `${run.id}:${run.completed_at || ''}`;
+    if (runDetailsCache.has(cacheKey)) return { ...run, ...runDetailsCache.get(cacheKey) };
+    try {
+      const detail = await request(`/api/chat/runs/${encodeURIComponent(run.id)}`);
+      const enriched = { actions: detail.actions || [] };
+      runDetailsCache.set(cacheKey, enriched);
+      return { ...run, ...enriched };
+    } catch {
+      return run;
+    }
+  }));
 }
 
 function renderRuns(runs) {
@@ -67,12 +208,18 @@ function renderRuns(runs) {
 
   observedMessagesNode = messages;
   messages.replaceChildren();
-  addMessage(messages, 'assistant', 'Mi Negocio está conectado. Podés plantear una decisión, un problema o una oportunidad. El equipo distinguirá datos reales, evidencia externa y faltantes antes de decidir.');
+  addMessage(
+    messages,
+    'assistant',
+    'Mi Negocio está conectado. Podés plantear una decisión, un problema o una oportunidad. El equipo distinguirá datos reales, evidencia externa y faltantes antes de decidir.',
+    '',
+    { controls: false },
+  );
 
   [...runs].reverse().forEach((run) => {
-    addMessage(messages, 'user', run.mission || 'Misión');
+    addMessage(messages, 'user', run.mission || 'Misión', '', { controls: false });
     const extra = run.status === 'failed' ? 'danger' : ['queued', 'running'].includes(run.status) ? 'muted' : '';
-    addMessage(messages, 'assistant', statusForRun(run), extra);
+    addMessage(messages, 'assistant', statusForRun(run), extra, { controls: run.status !== 'queued' && run.status !== 'running' });
   });
   messages.scrollTop = messages.scrollHeight;
 
@@ -102,7 +249,8 @@ async function hydrateChat() {
   if (!document.querySelector('#messages')) return;
   try {
     const data = await request('/api/chat/runs');
-    renderRuns(data.runs || []);
+    const runs = await enrichCompletedRuns(data.runs || []);
+    renderRuns(runs);
   } catch {
     // La vista principal maneja autenticación/errores globales.
   }
@@ -117,6 +265,9 @@ async function pollRun(runId) {
         const data = await request(`/api/chat/runs/${encodeURIComponent(runId)}`);
         const run = data.run;
         if (!run) continue;
+        if (['completed', 'failed', 'cancelled'].includes(run.status)) {
+          runDetailsCache.set(`${run.id}:${run.completed_at || ''}`, { actions: data.actions || [] });
+        }
         await hydrateChat();
         if (['completed', 'failed', 'cancelled'].includes(run.status)) return;
       } catch {
