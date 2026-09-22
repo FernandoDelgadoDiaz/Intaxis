@@ -21,7 +21,7 @@ jobs:
         run: |
           grep -F "req.get('x-agentic-mission')" src/app.js
           grep -F "decodeURIComponent(encodedHeader)" src/app.js
-          grep -F "0.3.4-chat-header" src/app.js
+          grep -F "export const BUILD_VERSION" src/app.js
           grep -F "headers.set('X-Agentic-Mission', encodeURIComponent(mission))" src/chat-transport.js
           grep -F 'mensaje=${encodeURIComponent(mission)}' src/chat-transport.js
           node --check src/app.js

@@ -8,6 +8,12 @@ import {
   runSpecialist,
   synthesizeDirectorMission,
 } from '../agents.js';
+import {
+  estimateModelCostUsd,
+  normalizeUsage,
+  PRICING_VERSION,
+  sumKnownCosts,
+} from '../ai-cost.js';
 
 export const chatRouter = Router();
 const clean = (value) => String(value || '').trim();
@@ -50,12 +56,56 @@ function failedSpecialistResult(message) {
   };
 }
 
+async function recordUsageEvent({
+  supabase,
+  businessId,
+  agentRunId,
+  specialistRunId = null,
+  roleKey,
+  phase,
+  model,
+  sessionId,
+  turnId,
+  usage,
+}) {
+  const normalized = normalizeUsage(usage);
+  const estimate = estimateModelCostUsd(model, usage);
+  const row = {
+    business_id: businessId,
+    agent_run_id: agentRunId,
+    specialist_run_id: specialistRunId,
+    role_key: roleKey,
+    phase,
+    model,
+    openai_session_id: sessionId || null,
+    openai_turn_id: turnId || null,
+    input_tokens: normalized?.inputTokens ?? null,
+    cached_input_tokens: normalized?.cachedInputTokens ?? null,
+    output_tokens: normalized?.outputTokens ?? null,
+    reasoning_tokens: normalized?.reasoningTokens ?? null,
+    total_tokens: normalized?.totalTokens ?? null,
+    estimated_model_cost_usd: estimate?.estimatedModelCostUsd ?? null,
+    usage_available: Boolean(normalized),
+    pricing_version: PRICING_VERSION,
+  };
+
+  const { error } = await supabase.from('ai_usage_events').insert(row);
+  if (error) throw error;
+
+  return {
+    usageAvailable: Boolean(normalized),
+    estimatedModelCostUsd: estimate?.estimatedModelCostUsd ?? null,
+    ...normalized,
+  };
+}
+
 chatRouter.get('/team', async (req, res) => {
   await authenticatedUser(req);
   const team = await getAgentTeam();
   const publicShape = (item) => ({
     key: item.key,
     name: item.name,
+    model: item.model,
     purpose: item.purpose,
     activation: item.activation,
   });
@@ -115,6 +165,18 @@ chatRouter.post('/chat', async (req, res) => {
       businessContext,
     });
 
+    const planningUsage = await recordUsageEvent({
+      supabase,
+      businessId: business.id,
+      agentRunId: run.id,
+      roleKey: 'director',
+      phase: 'director_plan',
+      model: planning.model,
+      sessionId: planning.sessionId,
+      turnId: planning.turnId,
+      usage: planning.usage,
+    });
+
     const providerSessionId = planning.sessionId || thread.provider_session_id;
     if (providerSessionId !== thread.provider_session_id) {
       const threadUpdate = await supabase
@@ -142,9 +204,12 @@ chatRouter.post('/chat', async (req, res) => {
         return {
           key: assignment.key,
           name: assignment.key,
+          model: null,
           task: assignment.task,
           agentId: '',
           sessionId: null,
+          usageAvailable: false,
+          estimatedModelCostUsd: null,
           result: failedSpecialistResult('El agente persistente no está disponible.'),
         };
       }
@@ -157,6 +222,7 @@ chatRouter.post('/chat', async (req, res) => {
           specialist_key: assignment.key,
           specialist_name: specialist.name,
           openai_agent_id: specialist.id,
+          model: specialist.model,
           assigned_task: assignment.task,
           status: 'running',
         })
@@ -172,23 +238,55 @@ chatRouter.post('/chat', async (req, res) => {
           businessContext,
         });
 
+        const cost = await recordUsageEvent({
+          supabase,
+          businessId: business.id,
+          agentRunId: run.id,
+          specialistRunId: trace.id,
+          roleKey: assignment.key,
+          phase: 'specialist',
+          model: result.model || specialist.model,
+          sessionId: result.sessionId,
+          turnId: result.turnId,
+          usage: result.usage,
+        });
+
         const completed = await supabase
           .from('specialist_runs')
           .update({
             openai_session_id: result.sessionId,
+            openai_turn_id: result.turnId,
+            model: result.model || specialist.model,
             result: result.result,
+            estimated_model_cost_usd: cost.estimatedModelCostUsd,
+            usage_available: cost.usageAvailable,
             status: 'completed',
             completed_at: new Date().toISOString(),
           })
           .eq('id', trace.id);
         if (completed.error) throw completed.error;
-        return result;
+
+        return { ...result, ...cost };
       } catch (error) {
         const fallback = failedSpecialistResult(error?.message || error);
+        await recordUsageEvent({
+          supabase,
+          businessId: business.id,
+          agentRunId: run.id,
+          specialistRunId: trace.id,
+          roleKey: assignment.key,
+          phase: 'specialist',
+          model: specialist.model,
+          sessionId: null,
+          turnId: null,
+          usage: null,
+        });
         await supabase
           .from('specialist_runs')
           .update({
             result: fallback,
+            model: specialist.model,
+            usage_available: false,
             status: 'failed',
             error_message: String(error?.message || error).slice(0, 2000),
             completed_at: new Date().toISOString(),
@@ -198,9 +296,12 @@ chatRouter.post('/chat', async (req, res) => {
         return {
           key: assignment.key,
           name: specialist.name,
+          model: specialist.model,
           task: assignment.task,
           agentId: specialist.id,
           sessionId: null,
+          usageAvailable: false,
+          estimatedModelCostUsd: null,
           result: fallback,
         };
       }
@@ -214,10 +315,34 @@ chatRouter.post('/chat', async (req, res) => {
       specialistResults,
     });
 
+    const synthesisUsage = await recordUsageEvent({
+      supabase,
+      businessId: business.id,
+      agentRunId: run.id,
+      roleKey: 'director',
+      phase: 'director_synthesis',
+      model: synthesis.model,
+      sessionId: synthesis.sessionId,
+      turnId: synthesis.turnId,
+      usage: synthesis.usage,
+    });
+
+    const knownCosts = [
+      planningUsage,
+      synthesisUsage,
+      ...specialistResults.map((item) => ({ estimatedModelCostUsd: item.estimatedModelCostUsd })),
+    ];
+    const totalEstimatedModelCostUsd = sumKnownCosts(knownCosts);
+    const usageComplete = planningUsage.usageAvailable &&
+      synthesisUsage.usageAvailable &&
+      specialistResults.every((item) => item.usageAvailable === true);
+
     const complete = await supabase
       .from('agent_runs')
       .update({
         result_summary: synthesis.response,
+        estimated_model_cost_usd: totalEstimatedModelCostUsd,
+        usage_complete: usageComplete,
         status: 'completed',
         completed_at: new Date().toISOString(),
       })
@@ -228,11 +353,19 @@ chatRouter.post('/chat', async (req, res) => {
       respuesta: synthesis.response,
       threadId: thread.id,
       delegationPlan: planning.plan,
+      technologyCost: {
+        estimatedModelCostUsd: totalEstimatedModelCostUsd,
+        usageComplete,
+        pricingVersion: PRICING_VERSION,
+        note: 'Costo estimado de tokens del modelo; no incluye herramientas, cache writes, sandbox, terceros, impuestos ni recargos regionales.',
+      },
       specialists: specialistResults.map((item) => ({
         key: item.key,
         name: item.name,
+        model: item.model,
         task: item.task,
         confidence: item.result?.confidence || 'low',
+        estimatedModelCostUsd: item.estimatedModelCostUsd ?? null,
       })),
     });
   } catch (error) {
