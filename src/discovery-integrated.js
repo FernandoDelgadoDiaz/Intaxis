@@ -8,11 +8,36 @@ let discovery = null;
 let business = null;
 let profile = null;
 let selected = new Set();
+let developmentLaunching = false;
+let developmentTimer = null;
+let lastBackgroundKickAt = 0;
 const TIMEOUT_MS = 8000;
+const DEVELOPMENT_POLL_MS = 4500;
+const BACKGROUND_REKICK_MS = 20000;
 
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const band = (value) => ({ low: 'Bajo', medium: 'Medio', high: 'Alto' }[value] || 'Sin dato');
 const statusLabel = (value) => ({ researching: 'Investigando', ready: 'Lista para decidir', approved: 'Selección aprobada', superseded: 'Reemplazada', failed: 'Fallida', proposed: 'Propuesto', selected: 'Seleccionado', rejected: 'Descartado' }[value] || value || 'Sin estado');
+const developmentStatusLabel = (value) => ({
+  not_started: 'Sin iniciar',
+  pending: 'Preparando desarrollo',
+  queued: 'En cola',
+  running: 'Especialistas trabajando',
+  completed: 'Desarrollo técnico completo',
+  partial: 'Desarrollo parcial',
+  failed: 'Requiere revisión',
+}[value] || 'Pendiente');
+const developmentStageLabel = (value) => ({
+  awaiting_selection: 'Esperando selección',
+  selected: 'Selección confirmada',
+  queued: 'Preparando equipo',
+  product_design: 'Producto y Experiencia',
+  production_review: 'Producción y Abastecimiento',
+  quality_review: 'Calidad y Cumplimiento',
+  persisting: 'Integrando fichas',
+  completed: 'Fichas listas',
+  error: 'Revisar error',
+}[value] || value || 'Pendiente');
 
 function timeout(promise, label) {
   let timer;
@@ -32,6 +57,26 @@ async function db() {
     })();
   }
   return supabasePromise;
+}
+
+async function accessToken() {
+  const client = await db();
+  const { data } = await client.auth.getSession();
+  const token = data?.session?.access_token;
+  if (!token) throw new Error('Necesitás iniciar sesión.');
+  return token;
+}
+
+async function authenticatedFetch(path, options = {}) {
+  const token = await accessToken();
+  return timeout(fetch(path, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
+  }), 'La solicitud');
 }
 
 async function readDiscovery() {
@@ -142,14 +187,69 @@ function evidenceCard(item, candidateById) {
   return `<article class="evidence-card">${image}<div class="evidence-copy"><strong>${esc(candidate?.name || item.source_name || item.evidence_type)}</strong><p>${esc(item.claim)}</p>${link}<div class="evidence-meta"><span>${esc(item.market_scope)}${item.country ? ` · ${esc(item.country)}` : ''}</span><span>${esc(item.confidence)}</span></div></div></article>`;
 }
 
+function listItems(items, formatter = (item) => item) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return '<p class="muted">Pendiente.</p>';
+  return `<ul class="discovery-detail-list">${rows.map((item) => `<li>${esc(formatter(item))}</li>`).join('')}</ul>`;
+}
+
 function blueprintCard(item, candidateById) {
   const candidate = candidateById.get(item.candidate_id);
-  const ingredients = Array.isArray(item.ingredients) ? item.ingredients.length : 0;
-  const steps = Array.isArray(item.instructions) ? item.instructions.length : 0;
-  const conservation = item.conservation && typeof item.conservation === 'object'
-    ? Object.values(item.conservation).filter(Boolean).slice(0, 3).join(' · ')
-    : '';
-  return `<article class="blueprint-card"><h5>${esc(candidate?.name || 'Definición operativa')}</h5><div class="blueprint-grid"><div class="blueprint-item"><strong>Tamaño / alcance</strong>${item.portion_grams == null ? 'Según el rubro' : `${esc(item.portion_grams)} g`}</div><div class="blueprint-item"><strong>Rendimiento</strong>${item.yield_units == null ? 'Según el rubro' : `${esc(item.yield_units)} unidades`}</div><div class="blueprint-item"><strong>Componentes y pasos</strong>${ingredients} componentes · ${steps} pasos</div><div class="blueprint-item"><strong>Condiciones especiales</strong>${esc(conservation || 'Pendiente')}</div></div>${item.quality_notes ? `<p class="discovery-note">${esc(item.quality_notes)}</p>` : ''}</article>`;
+  const offer = item.offer_definition && typeof item.offer_definition === 'object' ? item.offer_definition : {};
+  const ingredients = Array.isArray(item.ingredients) ? item.ingredients : [];
+  const steps = Array.isArray(item.instructions) && item.instructions.length ? item.instructions : (Array.isArray(item.process_steps) ? item.process_steps : []);
+  const allergens = Array.isArray(item.allergens) ? item.allergens : [];
+  const controls = Array.isArray(item.quality_controls) ? item.quality_controls : [];
+  const conservation = item.conservation && typeof item.conservation === 'object' ? item.conservation : {};
+  const costing = item.costing && typeof item.costing === 'object' ? item.costing : {};
+  const componentText = (row) => {
+    if (typeof row === 'string') return row;
+    const quantity = row?.quantity == null ? '' : `${row.quantity}${row.unit ? ` ${row.unit}` : ''}`;
+    return [row?.name, quantity, row?.notes].filter(Boolean).join(' · ');
+  };
+  const stepText = (row) => {
+    if (typeof row === 'string') return row;
+    return [row?.step ? `${row.step}.` : '', row?.instruction || row?.description, row?.duration_minutes != null ? `${row.duration_minutes} min` : '', row?.control].filter(Boolean).join(' ');
+  };
+  const conservationText = Object.entries(conservation).filter(([, value]) => value != null && value !== '').map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`);
+  const costInputs = Array.isArray(costing.required_inputs) ? costing.required_inputs : [];
+
+  return `<article class="blueprint-card">
+    <div class="candidate-rank"><strong>${esc(candidate?.name || 'Definición operativa')}</strong><span class="candidate-score">${esc(item.development_status || item.approval_status || 'review')}</span></div>
+    <p>${esc(offer.summary || candidate?.concept || 'Definición técnica en revisión.')}</p>
+    <div class="blueprint-grid">
+      <div class="blueprint-item"><strong>Tamaño / alcance</strong>${item.portion_grams == null ? esc(offer.unit_or_scope || 'Según el rubro') : `${esc(item.portion_grams)} g`}</div>
+      <div class="blueprint-item"><strong>Rendimiento</strong>${item.yield_units == null ? 'Pendiente' : `${esc(item.yield_units)} unidades`}</div>
+      <div class="blueprint-item"><strong>Componentes</strong>${ingredients.length}</div>
+      <div class="blueprint-item"><strong>Pasos</strong>${steps.length}</div>
+    </div>
+    <details open><summary>Componentes / receta</summary>${listItems(ingredients, componentText)}</details>
+    <details><summary>Proceso e instrucciones</summary>${listItems(steps, stepText)}</details>
+    <details><summary>Conservación / condiciones</summary>${listItems(conservationText)}</details>
+    <details><summary>Alérgenos y controles</summary>${listItems([...allergens.map((value) => `Alérgeno: ${value}`), ...controls])}</details>
+    <details><summary>Costeo</summary><p>${esc(costing.note || 'Pendiente de costos reales y trazables.')}</p>${listItems(costInputs)}</details>
+    ${item.quality_notes ? `<p class="discovery-note"><strong>Calidad:</strong> ${esc(item.quality_notes)}</p>` : ''}
+  </article>`;
+}
+
+function developmentPanel(run, blueprints) {
+  if (run.status !== 'approved') return '';
+  const status = run.development_status || 'pending';
+  const stage = run.development_stage || 'selected';
+  const complete = ['completed', 'partial'].includes(status);
+  const failed = status === 'failed';
+  const progress = status === 'running' ? `Trabajando ahora: ${developmentStageLabel(stage)}` : developmentStatusLabel(status);
+  return `<section class="discovery-panel development-panel">
+    <div class="discovery-panel-head"><div><h4>Desarrollo técnico</h4><p>La selección ya es una decisión humana. Desde acá el equipo técnico trabaja automáticamente sin publicar, gastar ni comprometer ventas.</p></div><span class="discovery-status">${esc(progress)}</span></div>
+    <div class="blueprint-grid">
+      <div class="blueprint-item"><strong>1 · Producto</strong>${stage === 'product_design' ? 'En curso…' : complete || ['production_review','quality_review','persisting','completed'].includes(stage) ? 'Procesado' : 'Pendiente'}</div>
+      <div class="blueprint-item"><strong>2 · Producción</strong>${stage === 'production_review' ? 'En curso…' : complete || ['quality_review','persisting','completed'].includes(stage) ? 'Procesado' : 'Pendiente'}</div>
+      <div class="blueprint-item"><strong>3 · Calidad</strong>${stage === 'quality_review' ? 'En curso…' : complete || ['persisting','completed'].includes(stage) ? 'Procesado' : 'Pendiente'}</div>
+      <div class="blueprint-item"><strong>Resultado</strong>${blueprints.length ? `${blueprints.length} fichas` : complete ? 'Sin fichas' : 'En preparación'}</div>
+    </div>
+    ${run.development_error_message ? `<div class="discovery-note"><strong>Observación:</strong> ${esc(run.development_error_message)}</div>` : ''}
+    ${failed ? '<button class="primary" id="retry-development">Reintentar desarrollo técnico</button>' : ''}
+  </section>`;
 }
 
 function viewHtml() {
@@ -163,9 +263,10 @@ function viewHtml() {
     <section class="discovery-hero"><div><span class="eyebrow">Descubrimiento de oportunidades</span><h3>${esc(run.title || 'Investigación de mercado')}</h3><p>${esc(run.objective || 'Comparación de oportunidades orientada a decidir qué validar primero.')}</p><div class="discovery-note"><span class="discovery-status">${esc(statusLabel(run.status))}</span> · ${candidates.length} candidatos · ${evidence.length} evidencias</div></div><div class="discovery-actions"><button class="secondary" id="discovery-copy-summary">Copiar resumen</button><button class="primary" id="discovery-export-excel">Exportar Excel</button></div></section>
     <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Resumen ejecutivo</h4><p>Lectura corta para decidir desde computadora o teléfono.</p></div></div><div class="discovery-summary">${esc(run.executive_summary || 'La investigación todavía no tiene resumen ejecutivo.')}</div>${run.recommendation_notes ? `<div class="discovery-note"><strong>Nota:</strong> ${esc(run.recommendation_notes)}</div>` : ''}</section>
     <section><div class="discovery-panel-head"><div><h4>Candidatos propuestos</h4><p>${esc(plural)} ordenados como hipótesis de aceptación, no como garantía de ventas.</p></div>${run.status !== 'approved' ? `<button class="primary" id="approve-discovery-selection">Confirmar ${selected.size} candidato${selected.size === 1 ? '' : 's'}</button>` : `<span class="discovery-status">${selectedCount} seleccionados</span>`}</div><div class="discovery-grid">${candidates.slice(0, 6).map(candidateCard).join('')}</div><div id="discovery-selection-status" class="discovery-note"></div></section>
+    ${developmentPanel(run, blueprints)}
     <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Cuadro comparativo</h4><p>Señales comerciales y operativas en una sola vista.</p></div></div>${comparisonTable(candidates)}</section>
     <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Evidencia e imágenes</h4><p>Cada referencia conserva fuente, mercado y nivel de confianza.</p></div></div>${evidence.length ? `<div class="evidence-grid">${evidence.slice(0, 16).map((item) => evidenceCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Todavía no hay evidencia visual cargada.</p></div>'}</section>
-    <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Definición operativa posterior a la selección</h4><p>El detalle se adapta al rubro: receta y conservación, prestación del servicio, recursos, pasos y controles.</p></div></div>${blueprints.length ? `<div class="blueprint-list">${blueprints.map((item) => blueprintCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>La definición operativa todavía no fue generada. Esto es correcto hasta confirmar los candidatos.</p></div>'}</section>
+    <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Definición operativa posterior a la selección</h4><p>El detalle se adapta al rubro: receta y conservación, prestación del servicio, recursos, pasos y controles.</p></div></div>${blueprints.length ? `<div class="blueprint-list">${blueprints.map((item) => blueprintCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Las fichas se generan automáticamente después de confirmar la selección.</p></div>'}</section>
   </div>`;
 }
 
@@ -214,6 +315,79 @@ function renderDiscovery() {
   bindActions();
 }
 
+function stopDevelopmentPolling() {
+  if (developmentTimer) clearTimeout(developmentTimer);
+  developmentTimer = null;
+}
+
+async function kickBackground(agentRunId) {
+  if (!agentRunId) return;
+  const now = Date.now();
+  if (now - lastBackgroundKickAt < BACKGROUND_REKICK_MS) return;
+  lastBackgroundKickAt = now;
+  const token = await accessToken();
+  await fetch('/.netlify/functions/opportunity-development-background', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ discoveryRunId: discovery.run.id, agentRunId }),
+  }).catch(() => {});
+}
+
+async function queueDevelopment(retry = false) {
+  if (!discovery?.run?.id || developmentLaunching) return;
+  developmentLaunching = true;
+  try {
+    const response = await authenticatedFetch(`/api/discovery/${encodeURIComponent(discovery.run.id)}/develop`, {
+      method: 'POST',
+      body: JSON.stringify({ retry }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `No se pudo iniciar el desarrollo (${response.status}).`);
+    if (body.agentRunId && !body.alreadyCompleted) await kickBackground(body.agentRunId);
+    await readDiscovery();
+    if (active) renderDiscovery();
+    scheduleDevelopmentPolling();
+  } catch (error) {
+    const host = document.querySelector('.development-panel');
+    if (host) host.insertAdjacentHTML('beforeend', `<div class="discovery-note"><strong>No se pudo iniciar:</strong> ${esc(error.message)}</div>`);
+  } finally {
+    developmentLaunching = false;
+  }
+}
+
+function scheduleDevelopmentPolling() {
+  stopDevelopmentPolling();
+  if (!active || !discovery?.run) return;
+  const status = discovery.run.development_status || 'not_started';
+  if (!['pending', 'queued', 'running'].includes(status)) return;
+  developmentTimer = setTimeout(async () => {
+    if (!active) return;
+    try {
+      await readDiscovery();
+      if (!active) return;
+      renderDiscovery();
+      const currentStatus = discovery?.run?.development_status;
+      if (currentStatus === 'queued' && discovery.run.development_agent_run_id) {
+        await kickBackground(discovery.run.development_agent_run_id);
+      }
+      scheduleDevelopmentPolling();
+    } catch (error) {
+      if (active) renderError(error);
+    }
+  }, DEVELOPMENT_POLL_MS);
+}
+
+async function ensureDevelopmentWorkflow() {
+  if (!discovery?.run || discovery.run.status !== 'approved') return;
+  const status = discovery.run.development_status || 'not_started';
+  if (['not_started', 'pending'].includes(status)) {
+    await queueDevelopment(false);
+    return;
+  }
+  if (status === 'queued' && discovery.run.development_agent_run_id) await kickBackground(discovery.run.development_agent_run_id);
+  scheduleDevelopmentPolling();
+}
+
 async function activate() {
   if (loading) return;
   active = true;
@@ -226,6 +400,7 @@ async function activate() {
     if (!active) return;
     markActive();
     renderDiscovery();
+    ensureDevelopmentWorkflow().catch(() => {});
   } catch (error) {
     if (active) renderError(error);
   } finally {
@@ -246,6 +421,7 @@ async function confirmSelection() {
     if (status) status.textContent = 'Selección confirmada ✓';
     await readDiscovery();
     renderDiscovery();
+    await ensureDevelopmentWorkflow();
   } catch (error) {
     if (status) status.textContent = error.message;
     if (button) { button.disabled = false; button.textContent = `Confirmar ${selected.size} candidatos`; }
@@ -259,9 +435,7 @@ async function exportExcel(button) {
   const original = button.textContent;
   button.textContent = 'Generando Excel…';
   try {
-    const client = await db();
-    const { data } = await client.auth.getSession();
-    const token = data?.session?.access_token;
+    const token = await accessToken();
     const response = await timeout(fetch(`/api/discovery/${encodeURIComponent(runId)}/excel`, { headers: { Authorization: `Bearer ${token}` } }), 'La exportación');
     if (!response.ok) throw new Error(`No se pudo exportar Excel (${response.status}).`);
     const blob = await response.blob();
@@ -292,6 +466,7 @@ function bindActions() {
     renderDiscovery();
   }));
   document.querySelector('#approve-discovery-selection')?.addEventListener('click', confirmSelection);
+  document.querySelector('#retry-development')?.addEventListener('click', () => queueDevelopment(true));
   document.querySelector('#discovery-copy-summary')?.addEventListener('click', async (event) => {
     const text = [discovery?.run?.executive_summary, discovery?.run?.recommendation_notes].filter(Boolean).join('\n\n') || 'Sin resumen disponible.';
     await navigator.clipboard.writeText(text);
@@ -312,7 +487,10 @@ document.addEventListener('click', (event) => {
     activate();
     return;
   }
-  if (event.target.closest?.('[data-view]')) active = false;
+  if (event.target.closest?.('[data-view]')) {
+    active = false;
+    stopDevelopmentPolling();
+  }
 }, true);
 
 const observer = new MutationObserver(() => {
