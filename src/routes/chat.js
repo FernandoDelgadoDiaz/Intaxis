@@ -100,48 +100,40 @@ async function recordUsageEvent({
   };
 }
 
-chatRouter.get('/team', async (req, res) => {
-  await authenticatedUser(req);
-  const team = await getAgentTeam();
-  const publicShape = (item) => ({
-    key: item.key,
-    name: item.name,
-    model: item.model,
-    purpose: item.purpose,
-    activation: item.activation,
-  });
-  res.json({
-    director: publicShape(team.director),
-    specialists: Object.values(team)
-      .filter((item) => item.key !== 'director')
-      .map(publicShape),
-  });
-});
-
-chatRouter.post('/chat', async (req, res) => {
-  const mission = missionFromRequest(req);
-  if (!mission) return res.status(400).json({ error: 'Escribí una misión para el Director.' });
-  if (mission.length > 6000) return res.status(400).json({ error: 'La misión supera los 6000 caracteres.' });
-
-  const { supabase, user } = await authenticatedUser(req);
-  const business = await requireBusiness(supabase);
-  const { data: run, error: runError } = await supabase
-    .from('agent_runs')
-    .insert({ business_id: business.id, mission, status: 'running' })
+async function activeThreadForBusiness(supabase, businessId) {
+  const { data, error } = await supabase
+    .from('agent_threads')
     .select('*')
-    .single();
+    .eq('business_id', businessId)
+    .eq('active', true)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
 
-  if (runError?.code === '23505') return res.status(409).json({ error: 'El Director ya tiene una misión en ejecución.' });
-  if (runError) throw runError;
+function publicRunShape(run) {
+  return {
+    id: run.id,
+    thread_id: run.thread_id,
+    mission: run.mission,
+    result_summary: run.result_summary,
+    status: run.status,
+    error_message: run.error_message,
+    started_at: run.started_at,
+    completed_at: run.completed_at,
+    delegation_plan: run.delegation_plan,
+    specialist_count: run.specialist_count,
+    estimated_model_cost_usd: run.estimated_model_cost_usd,
+    usage_complete: run.usage_complete,
+  };
+}
+
+export async function processAgentRun({ supabase, user, business, run }) {
+  const mission = clean(run?.mission);
+  if (!mission) throw new Error('La misión del agente está vacía.');
 
   try {
-    let { data: thread, error: threadError } = await supabase
-      .from('agent_threads')
-      .select('*')
-      .eq('business_id', business.id)
-      .eq('active', true)
-      .maybeSingle();
-    if (threadError) throw threadError;
+    let thread = await activeThreadForBusiness(supabase, business.id);
 
     if (!thread) {
       const created = await supabase
@@ -153,7 +145,12 @@ chatRouter.post('/chat', async (req, res) => {
       thread = created.data;
     }
 
-    await supabase.from('agent_runs').update({ thread_id: thread.id }).eq('id', run.id);
+    const threadLink = await supabase
+      .from('agent_runs')
+      .update({ thread_id: thread.id })
+      .eq('id', run.id)
+      .eq('business_id', business.id);
+    if (threadLink.error) throw threadLink.error;
 
     const businessContext = contextForAgent(
       business,
@@ -358,8 +355,9 @@ chatRouter.post('/chat', async (req, res) => {
       .eq('id', run.id);
     if (complete.error) throw complete.error;
 
-    res.json({
+    return {
       respuesta: synthesis.response,
+      runId: run.id,
       threadId: thread.id,
       delegationPlan: planning.plan,
       technologyCost: {
@@ -387,7 +385,7 @@ chatRouter.post('/chat', async (req, res) => {
         confidence: item.result?.confidence || 'low',
         estimatedModelCostUsd: item.estimatedModelCostUsd ?? null,
       })),
-    });
+    };
   } catch (error) {
     await supabase
       .from('agent_runs')
@@ -399,19 +397,116 @@ chatRouter.post('/chat', async (req, res) => {
       .eq('id', run.id);
     throw error;
   }
+}
+
+export async function processQueuedAgentRun({ supabase, user, business, runId }) {
+  const { data: run, error } = await supabase
+    .from('agent_runs')
+    .update({ status: 'running' })
+    .eq('id', runId)
+    .eq('business_id', business.id)
+    .eq('status', 'queued')
+    .select('*')
+    .maybeSingle();
+  if (error) throw error;
+  if (!run) return { skipped: true, runId };
+  return processAgentRun({ supabase, user, business, run });
+}
+
+chatRouter.get('/team', async (req, res) => {
+  await authenticatedUser(req);
+  const team = await getAgentTeam();
+  const publicShape = (item) => ({
+    key: item.key,
+    name: item.name,
+    model: item.model,
+    purpose: item.purpose,
+    activation: item.activation,
+  });
+  res.json({
+    director: publicShape(team.director),
+    specialists: Object.values(team)
+      .filter((item) => item.key !== 'director')
+      .map(publicShape),
+  });
+});
+
+chatRouter.get('/chat/runs', async (req, res) => {
+  const { supabase } = await authenticatedUser(req);
+  const business = await requireBusiness(supabase);
+  const thread = await activeThreadForBusiness(supabase, business.id);
+
+  let query = supabase
+    .from('agent_runs')
+    .select('*')
+    .eq('business_id', business.id)
+    .order('started_at', { ascending: false })
+    .limit(20);
+
+  if (thread) query = query.or(`thread_id.eq.${thread.id},status.eq.queued,status.eq.running`);
+  else query = query.in('status', ['queued', 'running']);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  res.json({ runs: (data || []).map(publicRunShape) });
+});
+
+chatRouter.get('/chat/runs/:id', async (req, res) => {
+  const { supabase } = await authenticatedUser(req);
+  const business = await requireBusiness(supabase);
+  const { data: run, error } = await supabase
+    .from('agent_runs')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('business_id', business.id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!run) return res.status(404).json({ error: 'La misión no existe.' });
+
+  const actions = await supabase
+    .from('agent_action_requests')
+    .select('id,action_type,title,policy_decision,status,requires_human,policy_reason,execution_result,error_message')
+    .eq('business_id', business.id)
+    .eq('agent_run_id', run.id)
+    .order('created_at');
+  if (actions.error) throw actions.error;
+
+  res.json({ run: publicRunShape(run), actions: actions.data || [] });
+});
+
+chatRouter.post('/chat', async (req, res) => {
+  const mission = missionFromRequest(req);
+  if (!mission) return res.status(400).json({ error: 'Escribí una misión para el Director.' });
+  if (mission.length > 6000) return res.status(400).json({ error: 'La misión supera los 6000 caracteres.' });
+
+  const { supabase } = await authenticatedUser(req);
+  const business = await requireBusiness(supabase);
+  const { data: run, error: runError } = await supabase
+    .from('agent_runs')
+    .insert({ business_id: business.id, mission, status: 'queued' })
+    .select('*')
+    .single();
+
+  if (runError?.code === '23505') return res.status(409).json({ error: 'El Director ya tiene una misión en ejecución.' });
+  if (runError) throw runError;
+
+  res.status(202).json({ runId: run.id, status: run.status, startedAt: run.started_at });
 });
 
 chatRouter.post('/reiniciar', async (req, res) => {
   const { supabase } = await authenticatedUser(req);
   const business = await requireBusiness(supabase);
-  const { data: thread, error } = await supabase
-    .from('agent_threads')
-    .select('*')
+  const { data: activeRun, error: activeRunError } = await supabase
+    .from('agent_runs')
+    .select('id,status')
     .eq('business_id', business.id)
-    .eq('active', true)
+    .in('status', ['queued', 'running'])
+    .limit(1)
     .maybeSingle();
-  if (error) throw error;
+  if (activeRunError) throw activeRunError;
+  if (activeRun) return res.status(409).json({ error: 'Esperá a que termine la misión activa antes de iniciar una conversación nueva.' });
 
+  const thread = await activeThreadForBusiness(supabase, business.id);
   if (thread) {
     await supabase
       .from('agent_threads')
