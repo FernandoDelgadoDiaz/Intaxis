@@ -9,35 +9,22 @@ let business = null;
 let profile = null;
 let selected = new Set();
 let developmentLaunching = false;
+let enrichmentLaunching = false;
 let developmentTimer = null;
-let lastBackgroundKickAt = 0;
+let enrichmentTimer = null;
+let lastDevelopmentKickAt = 0;
+let lastEnrichmentKickAt = 0;
 const TIMEOUT_MS = 8000;
-const DEVELOPMENT_POLL_MS = 4500;
+const POLL_MS = 4500;
 const BACKGROUND_REKICK_MS = 20000;
 
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const band = (value) => ({ low: 'Bajo', medium: 'Medio', high: 'Alto' }[value] || 'Sin dato');
 const statusLabel = (value) => ({ researching: 'Investigando', ready: 'Lista para decidir', approved: 'Selección aprobada', superseded: 'Reemplazada', failed: 'Fallida', proposed: 'Propuesto', selected: 'Seleccionado', rejected: 'Descartado' }[value] || value || 'Sin estado');
-const developmentStatusLabel = (value) => ({
-  not_started: 'Sin iniciar',
-  pending: 'Preparando desarrollo',
-  queued: 'En cola',
-  running: 'Especialistas trabajando',
-  completed: 'Desarrollo técnico completo',
-  partial: 'Desarrollo parcial',
-  failed: 'Requiere revisión',
-}[value] || 'Pendiente');
-const developmentStageLabel = (value) => ({
-  awaiting_selection: 'Esperando selección',
-  selected: 'Selección confirmada',
-  queued: 'Preparando equipo',
-  product_design: 'Producto y Experiencia',
-  production_review: 'Producción y Abastecimiento',
-  quality_review: 'Calidad y Cumplimiento',
-  persisting: 'Integrando fichas',
-  completed: 'Fichas listas',
-  error: 'Revisar error',
-}[value] || value || 'Pendiente');
+const developmentStatusLabel = (value) => ({ not_started: 'Sin iniciar', pending: 'Preparando desarrollo', queued: 'En cola', running: 'Especialistas trabajando', completed: 'Desarrollo técnico completo', partial: 'Desarrollo parcial', failed: 'Requiere revisión' }[value] || 'Pendiente');
+const developmentStageLabel = (value) => ({ awaiting_selection: 'Esperando selección', selected: 'Selección confirmada', queued: 'Preparando equipo', product_design: 'Producto y Experiencia', production_review: 'Producción y Abastecimiento', quality_review: 'Calidad y Cumplimiento', persisting: 'Integrando fichas', completed: 'Fichas listas', error: 'Revisar error' }[value] || value || 'Pendiente');
+const enrichmentStatusLabel = (value) => ({ not_started: 'Sin iniciar', pending: 'Preparando presentación', queued: 'En cola', running: 'Enriqueciendo oferta', completed: 'Presentación fundamentada lista', partial: 'Presentación parcial', failed: 'Requiere revisión' }[value] || 'Pendiente');
+const enrichmentStageLabel = (value) => ({ awaiting_technical_definition: 'Esperando ficha técnica', selected_offer_enrichment: 'Preparando enriquecimiento', queued: 'Preparando especialistas', market_visual_review: 'Mercado · referencias y presentación', human_instructions: 'Producto · instrucciones claras', quality_repair: 'Calidad · completando controles', aspirational_media: 'Creando imagen aspiracional', completed: 'Enriquecimiento listo', error: 'Revisar error' }[value] || value || 'Pendiente');
 
 function timeout(promise, label) {
   let timer;
@@ -129,9 +116,7 @@ async function readDiscovery() {
   }
 
   discovery = { run, candidates, evidence: evidenceResult.data || [], blueprints };
-  selected = new Set(
-    candidates.filter((item) => item.status === 'selected' || (run.status !== 'approved' && Number(item.rank) <= 3)).slice(0, 3).map((item) => item.id),
-  );
+  selected = new Set(candidates.filter((item) => item.status === 'selected' || (run.status !== 'approved' && Number(item.rank) <= 3)).slice(0, 3).map((item) => item.id));
 }
 
 function terminology() {
@@ -143,17 +128,26 @@ function terminology() {
   };
 }
 
-function imageBlock(url, alt, className = 'candidate-image') {
-  if (!url || !/^https:\/\//i.test(url)) return `<div class="${className}"><span class="no-image">Sin imagen verificada</span></div>`;
+function imageBlock(url, alt, className = 'candidate-image', emptyText = 'Sin imagen verificada') {
+  if (!url || !/^https:\/\//i.test(url)) return `<div class="${className}"><span class="no-image">${esc(emptyText)}</span></div>`;
   return `<div class="${className}"><img loading="lazy" src="${esc(url)}" alt="${esc(alt)}" referrerpolicy="no-referrer"></div>`;
+}
+
+function blueprintFor(candidateId) {
+  return discovery?.blueprints?.find((item) => item.candidate_id === candidateId) || null;
 }
 
 function candidateCard(item) {
   const score = item.acceptance_score == null ? 'Sin score' : `${Number(item.acceptance_score).toLocaleString('es-AR', { maximumFractionDigits: 0 })}/100`;
   const checked = selected.has(item.id);
+  const blueprint = blueprintFor(item.id);
+  const aspiration = blueprint?.aspirational_media && typeof blueprint.aspirational_media === 'object' ? blueprint.aspirational_media : {};
+  const imageUrl = aspiration.status === 'ready' ? aspiration.url : item.image_url;
+  const imageLabel = aspiration.status === 'ready' ? 'Imagen aspiracional basada en mercado' : 'Referencia de investigación';
   return `<article class="candidate-card ${checked ? 'candidate-selected' : ''}">
-    ${imageBlock(item.image_url, item.name)}
+    ${imageBlock(imageUrl, item.name)}
     <div class="candidate-body">
+      ${imageUrl ? `<span class="visual-origin">${esc(imageLabel)}</span>` : ''}
       <div class="candidate-rank"><strong>#${esc(item.rank)} · candidato</strong><span class="candidate-score">${esc(score)}</span></div>
       <h4>${esc(item.name)}</h4>
       <p>${esc(item.concept || item.presentation || 'Pendiente de definición.')}</p>
@@ -193,11 +187,48 @@ function listItems(items, formatter = (item) => item) {
   return `<ul class="discovery-detail-list">${rows.map((item) => `<li>${esc(formatter(item))}</li>`).join('')}</ul>`;
 }
 
+function referenceCards(references) {
+  const rows = Array.isArray(references) ? references : [];
+  if (!rows.length) return '<p class="muted">Todavía no hay referencias visuales suficientemente trazables.</p>';
+  return `<div class="market-reference-grid">${rows.map((row) => {
+    const image = row.image_url && /^https:\/\//i.test(row.image_url)
+      ? `<div class="market-reference-image"><img loading="lazy" src="${esc(row.image_url)}" alt="${esc(row.source_name || 'Referencia')}" referrerpolicy="no-referrer"></div>`
+      : '<div class="market-reference-image"><span class="no-image">Ver fuente</span></div>';
+    const link = row.source_url && /^https:\/\//i.test(row.source_url)
+      ? `<a href="${esc(row.source_url)}" target="_blank" rel="noopener noreferrer">Abrir referencia</a>`
+      : '';
+    return `<article class="market-reference-card">${image}<div><strong>${esc(row.source_name || 'Referencia de mercado')}</strong><span>${esc(row.market_scope || '')}</span><p>${esc(row.observed_pattern || row.why_relevant || '')}</p>${link}</div></article>`;
+  }).join('')}</div>`;
+}
+
+function humanSteps(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return '<p class="muted">La versión conversacional todavía se está preparando.</p>';
+  return `<div class="human-steps">${rows.map((row, index) => `<div class="human-step"><span>${esc(row.step || index + 1)}</span><div><strong>${esc(row.title || `Paso ${index + 1}`)}</strong><p>${esc(row.instruction || '')}</p>${row.duration_minutes != null ? `<small>Tiempo orientativo: ${esc(row.duration_minutes)} min</small>` : ''}${row.control ? `<div class="human-control"><strong>Control:</strong> ${esc(row.control)}</div>` : ''}</div></div>`).join('')}</div>`;
+}
+
+function visualStrategyBlock(item) {
+  const strategy = item.visual_strategy && typeof item.visual_strategy === 'object' ? item.visual_strategy : {};
+  const refs = Array.isArray(item.reference_media) ? item.reference_media : [];
+  const aspiration = item.aspirational_media && typeof item.aspirational_media === 'object' ? item.aspirational_media : {};
+  if (!Object.keys(strategy).length && aspiration.status !== 'ready') return '';
+  return `<section class="offer-visual-section">
+    <div class="offer-visual-head"><div><span class="eyebrow">Presentación recomendada</span><h5>${esc(strategy.recommended_presentation || 'Hipótesis visual en desarrollo')}</h5></div><span class="evidence-count">${refs.length} referencia${refs.length === 1 ? '' : 's'}</span></div>
+    <div class="aspirational-layout">
+      <div>${imageBlock(aspiration.status === 'ready' ? aspiration.url : null, 'Imagen aspiracional', 'aspirational-image', 'Imagen aspiracional pendiente')}${aspiration.disclaimer ? `<small class="aspirational-disclaimer">${esc(aspiration.disclaimer)}</small>` : ''}</div>
+      <div class="visual-rationale"><p>${esc(strategy.strategy_summary || '')}</p>${listItems(strategy.visual_priorities, (value) => `Prioridad visual: ${value}`)}${listItems(strategy.differentiators, (value) => `Diferencial: ${value}`)}</div>
+    </div>
+    <details class="competition-details"><summary>¿Querés ver cómo lo presenta la competencia?</summary><p class="muted">Estas referencias sirven para entender patrones del mercado. No son modelos para copiar.</p>${referenceCards(refs)}</details>
+    ${Array.isArray(strategy.avoid) && strategy.avoid.length ? `<details><summary>Qué conviene evitar</summary>${listItems(strategy.avoid)}</details>` : ''}
+  </section>`;
+}
+
 function blueprintCard(item, candidateById) {
   const candidate = candidateById.get(item.candidate_id);
   const offer = item.offer_definition && typeof item.offer_definition === 'object' ? item.offer_definition : {};
   const ingredients = Array.isArray(item.ingredients) ? item.ingredients : [];
-  const steps = Array.isArray(item.instructions) && item.instructions.length ? item.instructions : (Array.isArray(item.process_steps) ? item.process_steps : []);
+  const technicalSteps = Array.isArray(item.instructions) && item.instructions.length ? item.instructions : (Array.isArray(item.process_steps) ? item.process_steps : []);
+  const humanInstructions = Array.isArray(item.human_instructions) ? item.human_instructions : [];
   const allergens = Array.isArray(item.allergens) ? item.allergens : [];
   const controls = Array.isArray(item.quality_controls) ? item.quality_controls : [];
   const conservation = item.conservation && typeof item.conservation === 'object' ? item.conservation : {};
@@ -209,7 +240,7 @@ function blueprintCard(item, candidateById) {
   };
   const stepText = (row) => {
     if (typeof row === 'string') return row;
-    return [row?.step ? `${row.step}.` : '', row?.instruction || row?.description, row?.duration_minutes != null ? `${row.duration_minutes} min` : '', row?.control].filter(Boolean).join(' ');
+    return [row?.step ? `${row.step}.` : '', row?.instruction || row?.description, row?.duration_minutes != null ? `${row.duration_minutes} min` : '', row?.control ? `Control: ${row.control}` : ''].filter(Boolean).join(' ');
   };
   const conservationText = Object.entries(conservation).filter(([, value]) => value != null && value !== '').map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`);
   const costInputs = Array.isArray(costing.required_inputs) ? costing.required_inputs : [];
@@ -217,14 +248,16 @@ function blueprintCard(item, candidateById) {
   return `<article class="blueprint-card">
     <div class="candidate-rank"><strong>${esc(candidate?.name || 'Definición operativa')}</strong><span class="candidate-score">${esc(item.development_status || item.approval_status || 'review')}</span></div>
     <p>${esc(offer.summary || candidate?.concept || 'Definición técnica en revisión.')}</p>
+    ${visualStrategyBlock(item)}
     <div class="blueprint-grid">
       <div class="blueprint-item"><strong>Tamaño / alcance</strong>${item.portion_grams == null ? esc(offer.unit_or_scope || 'Según el rubro') : `${esc(item.portion_grams)} g`}</div>
       <div class="blueprint-item"><strong>Rendimiento</strong>${item.yield_units == null ? 'Pendiente' : `${esc(item.yield_units)} unidades`}</div>
       <div class="blueprint-item"><strong>Componentes</strong>${ingredients.length}</div>
-      <div class="blueprint-item"><strong>Pasos</strong>${steps.length}</div>
+      <div class="blueprint-item"><strong>Pasos</strong>${technicalSteps.length}</div>
     </div>
-    <details open><summary>Componentes / receta</summary>${listItems(ingredients, componentText)}</details>
-    <details><summary>Proceso e instrucciones</summary>${listItems(steps, stepText)}</details>
+    <details open><summary>Cómo hacerlo</summary>${humanSteps(humanInstructions)}</details>
+    <details><summary>Componentes / receta</summary>${listItems(ingredients, componentText)}</details>
+    <details><summary>Detalle técnico del proceso</summary>${listItems(technicalSteps, stepText)}</details>
     <details><summary>Conservación / condiciones</summary>${listItems(conservationText)}</details>
     <details><summary>Alérgenos y controles</summary>${listItems([...allergens.map((value) => `Alérgeno: ${value}`), ...controls])}</details>
     <details><summary>Costeo</summary><p>${esc(costing.note || 'Pendiente de costos reales y trazables.')}</p>${listItems(costInputs)}</details>
@@ -240,7 +273,7 @@ function developmentPanel(run, blueprints) {
   const failed = status === 'failed';
   const progress = status === 'running' ? `Trabajando ahora: ${developmentStageLabel(stage)}` : developmentStatusLabel(status);
   return `<section class="discovery-panel development-panel">
-    <div class="discovery-panel-head"><div><h4>Desarrollo técnico</h4><p>La selección ya es una decisión humana. Desde acá el equipo técnico trabaja automáticamente sin publicar, gastar ni comprometer ventas.</p></div><span class="discovery-status">${esc(progress)}</span></div>
+    <div class="discovery-panel-head"><div><h4>Desarrollo técnico</h4><p>El equipo transforma la selección en una definición operativa sin publicar, gastar ni comprometer ventas.</p></div><span class="discovery-status">${esc(progress)}</span></div>
     <div class="blueprint-grid">
       <div class="blueprint-item"><strong>1 · Producto</strong>${stage === 'product_design' ? 'En curso…' : complete || ['production_review','quality_review','persisting','completed'].includes(stage) ? 'Procesado' : 'Pendiente'}</div>
       <div class="blueprint-item"><strong>2 · Producción</strong>${stage === 'production_review' ? 'En curso…' : complete || ['quality_review','persisting','completed'].includes(stage) ? 'Procesado' : 'Pendiente'}</div>
@@ -249,6 +282,27 @@ function developmentPanel(run, blueprints) {
     </div>
     ${run.development_error_message ? `<div class="discovery-note"><strong>Observación:</strong> ${esc(run.development_error_message)}</div>` : ''}
     ${failed ? '<button class="primary" id="retry-development">Reintentar desarrollo técnico</button>' : ''}
+  </section>`;
+}
+
+function enrichmentPanel(run, blueprints) {
+  if (!['completed', 'partial'].includes(run.development_status || '')) return '';
+  const status = run.enrichment_status || 'not_started';
+  const stage = run.enrichment_stage || 'awaiting_technical_definition';
+  const complete = ['completed', 'partial'].includes(status);
+  const progress = status === 'running' ? `Trabajando ahora: ${enrichmentStageLabel(stage)}` : enrichmentStatusLabel(status);
+  const imagesReady = blueprints.filter((item) => item?.aspirational_media?.status === 'ready').length;
+  const humanReady = blueprints.filter((item) => Array.isArray(item.human_instructions) && item.human_instructions.length).length;
+  return `<section class="discovery-panel enrichment-panel">
+    <div class="discovery-panel-head"><div><h4>Presentación comercial fundamentada</h4><p>No generamos una imagen decorativa: primero analizamos referencias y recién después construimos la hipótesis visual.</p></div><span class="discovery-status">${esc(progress)}</span></div>
+    <div class="blueprint-grid">
+      <div class="blueprint-item"><strong>1 · Mercado</strong>${stage === 'market_visual_review' ? 'Analizando referencias…' : complete || ['human_instructions','quality_repair','aspirational_media','completed'].includes(stage) ? 'Procesado' : 'Pendiente'}</div>
+      <div class="blueprint-item"><strong>2 · Lenguaje humano</strong>${stage === 'human_instructions' ? 'Preparando…' : humanReady ? `${humanReady} fichas` : complete ? 'Procesado' : 'Pendiente'}</div>
+      <div class="blueprint-item"><strong>3 · Calidad</strong>${stage === 'quality_repair' ? 'Completando…' : complete || ['aspirational_media','completed'].includes(stage) ? 'Revisado' : 'Pendiente'}</div>
+      <div class="blueprint-item"><strong>4 · Imagen aspiracional</strong>${stage === 'aspirational_media' ? 'Generando…' : imagesReady ? `${imagesReady} listas` : complete ? 'Sin imagen' : 'Pendiente'}</div>
+    </div>
+    ${run.enrichment_error_message ? `<div class="discovery-note"><strong>Observación:</strong> ${esc(run.enrichment_error_message)}</div>` : ''}
+    ${status === 'failed' ? '<button class="primary" id="retry-enrichment">Reintentar enriquecimiento</button>' : ''}
   </section>`;
 }
 
@@ -264,9 +318,10 @@ function viewHtml() {
     <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Resumen ejecutivo</h4><p>Lectura corta para decidir desde computadora o teléfono.</p></div></div><div class="discovery-summary">${esc(run.executive_summary || 'La investigación todavía no tiene resumen ejecutivo.')}</div>${run.recommendation_notes ? `<div class="discovery-note"><strong>Nota:</strong> ${esc(run.recommendation_notes)}</div>` : ''}</section>
     <section><div class="discovery-panel-head"><div><h4>Candidatos propuestos</h4><p>${esc(plural)} ordenados como hipótesis de aceptación, no como garantía de ventas.</p></div>${run.status !== 'approved' ? `<button class="primary" id="approve-discovery-selection">Confirmar ${selected.size} candidato${selected.size === 1 ? '' : 's'}</button>` : `<span class="discovery-status">${selectedCount} seleccionados</span>`}</div><div class="discovery-grid">${candidates.slice(0, 6).map(candidateCard).join('')}</div><div id="discovery-selection-status" class="discovery-note"></div></section>
     ${developmentPanel(run, blueprints)}
+    ${enrichmentPanel(run, blueprints)}
     <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Cuadro comparativo</h4><p>Señales comerciales y operativas en una sola vista.</p></div></div>${comparisonTable(candidates)}</section>
-    <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Evidencia e imágenes</h4><p>Cada referencia conserva fuente, mercado y nivel de confianza.</p></div></div>${evidence.length ? `<div class="evidence-grid">${evidence.slice(0, 16).map((item) => evidenceCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Todavía no hay evidencia visual cargada.</p></div>'}</section>
-    <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Definición operativa posterior a la selección</h4><p>El detalle se adapta al rubro: receta y conservación, prestación del servicio, recursos, pasos y controles.</p></div></div>${blueprints.length ? `<div class="blueprint-list">${blueprints.map((item) => blueprintCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Las fichas se generan automáticamente después de confirmar la selección.</p></div>'}</section>
+    <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Evidencia de mercado</h4><p>Cada referencia conserva fuente, mercado y nivel de confianza.</p></div></div>${evidence.length ? `<div class="evidence-grid">${evidence.slice(0, 16).map((item) => evidenceCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Todavía no hay evidencia cargada.</p></div>'}</section>
+    <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Ofertas en desarrollo</h4><p>Incluye presentación recomendada, referencias de competencia, imagen aspiracional, instrucciones simples y detalle técnico.</p></div></div>${blueprints.length ? `<div class="blueprint-list">${blueprints.map((item) => blueprintCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Las fichas se generan automáticamente después de confirmar la selección.</p></div>'}</section>
   </div>`;
 }
 
@@ -306,6 +361,7 @@ function renderError(error) {
   const content = document.querySelector('.main .content');
   if (!content) return;
   content.innerHTML = `<section class="discovery-empty" data-discovery-screen><h3>No se pudo cargar Descubrimiento</h3><p>${esc(error.message || 'Error desconocido.')}</p><button class="primary" id="retry-discovery">Reintentar</button></section>`;
+  document.querySelector('#retry-discovery')?.addEventListener('click', activate);
 }
 
 function renderDiscovery() {
@@ -315,18 +371,28 @@ function renderDiscovery() {
   bindActions();
 }
 
-function stopDevelopmentPolling() {
+function stopPolling() {
   if (developmentTimer) clearTimeout(developmentTimer);
+  if (enrichmentTimer) clearTimeout(enrichmentTimer);
   developmentTimer = null;
+  enrichmentTimer = null;
 }
 
-async function kickBackground(agentRunId) {
-  if (!agentRunId) return;
+async function kickBackground(kind, agentRunId) {
+  if (!agentRunId || !discovery?.run?.id) return;
   const now = Date.now();
-  if (now - lastBackgroundKickAt < BACKGROUND_REKICK_MS) return;
-  lastBackgroundKickAt = now;
+  if (kind === 'development') {
+    if (now - lastDevelopmentKickAt < BACKGROUND_REKICK_MS) return;
+    lastDevelopmentKickAt = now;
+  } else {
+    if (now - lastEnrichmentKickAt < BACKGROUND_REKICK_MS) return;
+    lastEnrichmentKickAt = now;
+  }
   const token = await accessToken();
-  await fetch('/.netlify/functions/opportunity-development-background', {
+  const path = kind === 'development'
+    ? '/.netlify/functions/opportunity-development-background'
+    : '/.netlify/functions/offer-enrichment-background';
+  await fetch(path, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ discoveryRunId: discovery.run.id, agentRunId }),
@@ -337,13 +403,10 @@ async function queueDevelopment(retry = false) {
   if (!discovery?.run?.id || developmentLaunching) return;
   developmentLaunching = true;
   try {
-    const response = await authenticatedFetch(`/api/discovery/${encodeURIComponent(discovery.run.id)}/develop`, {
-      method: 'POST',
-      body: JSON.stringify({ retry }),
-    });
+    const response = await authenticatedFetch(`/api/discovery/${encodeURIComponent(discovery.run.id)}/develop`, { method: 'POST', body: JSON.stringify({ retry }) });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `No se pudo iniciar el desarrollo (${response.status}).`);
-    if (body.agentRunId && !body.alreadyCompleted) await kickBackground(body.agentRunId);
+    if (body.agentRunId && !body.alreadyCompleted) await kickBackground('development', body.agentRunId);
     await readDiscovery();
     if (active) renderDiscovery();
     scheduleDevelopmentPolling();
@@ -355,26 +418,64 @@ async function queueDevelopment(retry = false) {
   }
 }
 
+async function queueEnrichment(retry = false) {
+  if (!discovery?.run?.id || enrichmentLaunching) return;
+  enrichmentLaunching = true;
+  try {
+    const response = await authenticatedFetch(`/api/discovery/${encodeURIComponent(discovery.run.id)}/enrich`, { method: 'POST', body: JSON.stringify({ retry }) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `No se pudo iniciar el enriquecimiento (${response.status}).`);
+    if (body.agentRunId && !body.alreadyCompleted) await kickBackground('enrichment', body.agentRunId);
+    await readDiscovery();
+    if (active) renderDiscovery();
+    scheduleEnrichmentPolling();
+  } catch (error) {
+    const host = document.querySelector('.enrichment-panel');
+    if (host) host.insertAdjacentHTML('beforeend', `<div class="discovery-note"><strong>No se pudo iniciar:</strong> ${esc(error.message)}</div>`);
+  } finally {
+    enrichmentLaunching = false;
+  }
+}
+
 function scheduleDevelopmentPolling() {
-  stopDevelopmentPolling();
+  if (developmentTimer) clearTimeout(developmentTimer);
   if (!active || !discovery?.run) return;
   const status = discovery.run.development_status || 'not_started';
-  if (!['pending', 'queued', 'running'].includes(status)) return;
+  if (!['pending', 'queued', 'running'].includes(status)) {
+    ensureEnrichmentWorkflow().catch(() => {});
+    return;
+  }
   developmentTimer = setTimeout(async () => {
     if (!active) return;
     try {
       await readDiscovery();
       if (!active) return;
       renderDiscovery();
-      const currentStatus = discovery?.run?.development_status;
-      if (currentStatus === 'queued' && discovery.run.development_agent_run_id) {
-        await kickBackground(discovery.run.development_agent_run_id);
-      }
+      if (discovery?.run?.development_status === 'queued' && discovery.run.development_agent_run_id) await kickBackground('development', discovery.run.development_agent_run_id);
       scheduleDevelopmentPolling();
     } catch (error) {
       if (active) renderError(error);
     }
-  }, DEVELOPMENT_POLL_MS);
+  }, POLL_MS);
+}
+
+function scheduleEnrichmentPolling() {
+  if (enrichmentTimer) clearTimeout(enrichmentTimer);
+  if (!active || !discovery?.run) return;
+  const status = discovery.run.enrichment_status || 'not_started';
+  if (!['pending', 'queued', 'running'].includes(status)) return;
+  enrichmentTimer = setTimeout(async () => {
+    if (!active) return;
+    try {
+      await readDiscovery();
+      if (!active) return;
+      renderDiscovery();
+      if (discovery?.run?.enrichment_status === 'queued' && discovery.run.enrichment_agent_run_id) await kickBackground('enrichment', discovery.run.enrichment_agent_run_id);
+      scheduleEnrichmentPolling();
+    } catch (error) {
+      if (active) renderError(error);
+    }
+  }, POLL_MS);
 }
 
 async function ensureDevelopmentWorkflow() {
@@ -384,8 +485,21 @@ async function ensureDevelopmentWorkflow() {
     await queueDevelopment(false);
     return;
   }
-  if (status === 'queued' && discovery.run.development_agent_run_id) await kickBackground(discovery.run.development_agent_run_id);
-  scheduleDevelopmentPolling();
+  if (status === 'queued' && discovery.run.development_agent_run_id) await kickBackground('development', discovery.run.development_agent_run_id);
+  if (['queued', 'running'].includes(status)) scheduleDevelopmentPolling();
+  else await ensureEnrichmentWorkflow();
+}
+
+async function ensureEnrichmentWorkflow() {
+  if (!discovery?.run || discovery.run.status !== 'approved') return;
+  if (!['completed', 'partial'].includes(discovery.run.development_status || '')) return;
+  const status = discovery.run.enrichment_status || 'not_started';
+  if (['not_started', 'pending'].includes(status)) {
+    await queueEnrichment(false);
+    return;
+  }
+  if (status === 'queued' && discovery.run.enrichment_agent_run_id) await kickBackground('enrichment', discovery.run.enrichment_agent_run_id);
+  if (['queued', 'running'].includes(status)) scheduleEnrichmentPolling();
 }
 
 async function activate() {
@@ -467,6 +581,7 @@ function bindActions() {
   }));
   document.querySelector('#approve-discovery-selection')?.addEventListener('click', confirmSelection);
   document.querySelector('#retry-development')?.addEventListener('click', () => queueDevelopment(true));
+  document.querySelector('#retry-enrichment')?.addEventListener('click', () => queueEnrichment(true));
   document.querySelector('#discovery-copy-summary')?.addEventListener('click', async (event) => {
     const text = [discovery?.run?.executive_summary, discovery?.run?.recommendation_notes].filter(Boolean).join('\n\n') || 'Sin resumen disponible.';
     await navigator.clipboard.writeText(text);
@@ -489,7 +604,7 @@ document.addEventListener('click', (event) => {
   }
   if (event.target.closest?.('[data-view]')) {
     active = false;
-    stopDevelopmentPolling();
+    stopPolling();
   }
 }, true);
 
