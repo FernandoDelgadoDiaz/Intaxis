@@ -7,6 +7,7 @@ export const discoveryRouter = Router();
 
 const bandLabel = (value) => ({ low: 'Bajo', medium: 'Medio', high: 'Alto' }[value] || 'Sin dato');
 const safeExcelFormulaString = (value) => String(value || '').replace(/"/g, '""');
+const jsonCell = (value, fallback) => JSON.stringify(value ?? fallback);
 
 async function loadDiscovery(supabase, businessId, runId = null) {
   let runQuery = supabase
@@ -56,7 +57,7 @@ async function loadDiscovery(supabase, businessId, runId = null) {
 
 function discoveryFilename(run) {
   const date = new Date(run.completed_at || run.created_at || Date.now()).toISOString().slice(0, 10);
-  return `Descubrimiento_Producto_${date}.xlsx`;
+  return `Descubrimiento_Oportunidades_${date}.xlsx`;
 }
 
 function headerStyle(row) {
@@ -139,23 +140,26 @@ discoveryRouter.get('/discovery/:id/excel', async (req, res) => {
   workbook.created = new Date();
 
   const summary = workbook.addWorksheet('Resumen');
-  summary.addRow(['DESCUBRIMIENTO DE PRODUCTO']);
+  summary.addRow(['DESCUBRIMIENTO DE OPORTUNIDADES']);
   summary.mergeCells('A1:F1');
   summary.getCell('A1').font = { bold: true, size: 18, color: { argb: 'FFFFFFFF' } };
   summary.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF102A43' } };
   summary.addRow(['Negocio', business.name]);
   summary.addRow(['Investigación', run.title]);
-  summary.addRow(['Estado', run.status]);
+  summary.addRow(['Estado investigación', run.status]);
+  summary.addRow(['Estado desarrollo técnico', run.development_status || 'No iniciado']);
+  summary.addRow(['Etapa desarrollo', run.development_stage || '']);
   summary.addRow(['Objetivo', run.objective || '']);
   summary.addRow(['Resumen ejecutivo', run.executive_summary || '']);
   summary.addRow(['Notas de recomendación', run.recommendation_notes || '']);
+  summary.addRow(['Observación desarrollo', run.development_error_message || '']);
   summary.addRow(['Alcance', JSON.stringify(run.scope || {})]);
-  summary.getColumn(1).width = 26;
+  summary.getColumn(1).width = 30;
   summary.getColumn(2).width = 92;
   summary.eachRow((row) => { row.alignment = { vertical: 'top', wrapText: true }; });
 
   const comparison = workbook.addWorksheet('Comparativo');
-  comparison.addRow(['Ranking', 'Producto', 'Aceptación', 'Score', 'Tendencia', 'Afinidad Argentina', 'Potencial visual', 'Complejidad producción', 'Riesgo conservación', 'Complejidad costo', 'Presentación', 'Fundamento', 'Estado']);
+  comparison.addRow(['Ranking', 'Oferta', 'Aceptación', 'Score', 'Tendencia', 'Afinidad Argentina', 'Potencial visual', 'Complejidad operación', 'Riesgo específico', 'Complejidad costo', 'Presentación', 'Fundamento', 'Estado']);
   headerStyle(comparison.getRow(1));
   for (const item of candidates) {
     comparison.addRow([
@@ -174,12 +178,12 @@ discoveryRouter.get('/discovery/:id/excel', async (req, res) => {
       item.status,
     ]);
   }
-  autosize(comparison, { 0: 10, 1: 28, 2: 16, 3: 10, 4: 16, 5: 18, 6: 18, 7: 20, 8: 18, 9: 18, 10: 34, 11: 56, 12: 14 });
+  autosize(comparison, { 0: 10, 1: 30, 2: 16, 3: 10, 4: 16, 5: 18, 6: 18, 7: 20, 8: 18, 9: 18, 10: 34, 11: 56, 12: 14 });
   comparison.views = [{ state: 'frozen', ySplit: 1 }];
   comparison.autoFilter = { from: 'A1', to: 'M1' };
 
   const evidenceSheet = workbook.addWorksheet('Evidencia');
-  evidenceSheet.addRow(['Mercado', 'País', 'Producto', 'Tipo', 'Hallazgo', 'Métrica', 'Valor', 'Unidad', 'Fuente', 'URL', 'Confianza', 'Observado']);
+  evidenceSheet.addRow(['Mercado', 'País', 'Oferta', 'Tipo', 'Hallazgo', 'Métrica', 'Valor', 'Unidad', 'Fuente', 'URL', 'Confianza', 'Observado']);
   headerStyle(evidenceSheet.getRow(1));
   const candidateById = new Map(candidates.map((item) => [item.id, item]));
   for (const item of evidence) {
@@ -198,14 +202,13 @@ discoveryRouter.get('/discovery/:id/excel', async (req, res) => {
       item.observed_at || '',
     ]);
   }
-  autosize(evidenceSheet, { 0: 15, 1: 18, 2: 28, 3: 18, 4: 62, 5: 18, 6: 12, 7: 12, 8: 28, 9: 52, 10: 14, 11: 22 });
+  autosize(evidenceSheet, { 0: 15, 1: 18, 2: 30, 3: 18, 4: 62, 5: 18, 6: 12, 7: 12, 8: 28, 9: 52, 10: 14, 11: 22 });
   evidenceSheet.views = [{ state: 'frozen', ySplit: 1 }];
   evidenceSheet.autoFilter = { from: 'A1', to: 'L1' };
 
   const images = workbook.addWorksheet('Imágenes');
-  images.addRow(['Ranking', 'Producto', 'Imagen', 'URL imagen', 'Fuente']);
+  images.addRow(['Ranking', 'Oferta', 'Imagen', 'URL imagen', 'Fuente']);
   headerStyle(images.getRow(1));
-  let imageRow = 2;
   for (const item of candidates) {
     const urls = [item.image_url, ...evidence.filter((row) => row.candidate_id === item.id).map((row) => row.image_url)].filter(Boolean);
     for (const url of [...new Set(urls)].slice(0, 4)) {
@@ -215,7 +218,6 @@ discoveryRouter.get('/discovery/:id/excel', async (req, res) => {
         row.getCell(3).value = { formula: `IMAGE("${safeExcelFormulaString(url)}","Referencia",3,90,120)` };
         row.getCell(4).value = { text: 'Abrir imagen', hyperlink: url };
       }
-      imageRow += 1;
     }
   }
   images.getColumn(1).width = 10;
@@ -227,24 +229,44 @@ discoveryRouter.get('/discovery/:id/excel', async (req, res) => {
   images.views = [{ state: 'frozen', ySplit: 1 }];
 
   const blueprintsSheet = workbook.addWorksheet('Ficha técnica');
-  blueprintsSheet.addRow(['Producto', 'Porción g', 'Rendimiento', 'Ingredientes', 'Instrucciones', 'Conservación', 'Alérgenos', 'Packaging', 'Notas calidad', 'Estado']);
+  blueprintsSheet.addRow([
+    'Oferta', 'Definición', 'Unidad / alcance', 'Porción g', 'Rendimiento',
+    'Componentes / receta', 'Recursos', 'Proceso / instrucciones', 'Condiciones operativas',
+    'Conservación', 'Alérgenos', 'Controles de calidad', 'Packaging / entrega',
+    'Estado de costeo', 'Datos de costo faltantes', 'Notas calidad', 'Estado desarrollo', 'Estado aprobación',
+  ]);
   headerStyle(blueprintsSheet.getRow(1));
   for (const blueprint of blueprints) {
     const candidate = candidateById.get(blueprint.candidate_id);
+    const offer = blueprint.offer_definition || {};
+    const costing = blueprint.costing || {};
     blueprintsSheet.addRow([
       candidate?.name || '',
+      offer.summary || '',
+      offer.unit_or_scope || '',
       blueprint.portion_grams ?? '',
       blueprint.yield_units ?? '',
-      JSON.stringify(blueprint.ingredients || []),
-      JSON.stringify(blueprint.instructions || []),
-      JSON.stringify(blueprint.conservation || {}),
-      JSON.stringify(blueprint.allergens || []),
-      JSON.stringify(blueprint.packaging || {}),
+      jsonCell(blueprint.ingredients, []),
+      jsonCell(blueprint.resources, []),
+      jsonCell((blueprint.instructions || []).length ? blueprint.instructions : blueprint.process_steps, []),
+      jsonCell(blueprint.operating_conditions, {}),
+      jsonCell(blueprint.conservation, {}),
+      jsonCell(blueprint.allergens, []),
+      jsonCell(blueprint.quality_controls, []),
+      jsonCell(blueprint.packaging, {}),
+      costing.status || '',
+      jsonCell(costing.required_inputs, []),
       blueprint.quality_notes || '',
+      blueprint.development_status || '',
       blueprint.approval_status,
     ]);
   }
-  autosize(blueprintsSheet, { 0: 28, 1: 12, 2: 12, 3: 58, 4: 68, 5: 52, 6: 34, 7: 42, 8: 48, 9: 16 });
+  autosize(blueprintsSheet, {
+    0: 30, 1: 48, 2: 20, 3: 12, 4: 12, 5: 58, 6: 44, 7: 68, 8: 48,
+    9: 52, 10: 34, 11: 44, 12: 42, 13: 20, 14: 48, 15: 52, 16: 18, 17: 18,
+  });
+  blueprintsSheet.views = [{ state: 'frozen', ySplit: 1 }];
+  blueprintsSheet.autoFilter = { from: 'A1', to: 'R1' };
 
   const output = await workbook.xlsx.writeBuffer();
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
