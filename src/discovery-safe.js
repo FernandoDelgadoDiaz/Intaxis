@@ -6,6 +6,7 @@ let configPromise;
 let discoveryActive = false;
 let loading = false;
 let lastDiscovery = null;
+let businessContext = null;
 
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const band = (value) => ({ low: 'Bajo', medium: 'Medio', high: 'Alto' }[value] || 'Sin dato');
@@ -48,6 +49,25 @@ async function request(path, options = {}) {
   return response;
 }
 
+async function loadBusinessContext() {
+  if (businessContext) return businessContext;
+  businessContext = await request('/api/mi-negocio');
+  return businessContext;
+}
+
+function profile() {
+  return businessContext?.snapshot?.business_profile || null;
+}
+
+function offerWords() {
+  const p = profile();
+  const terms = p?.terminology || {};
+  const mode = p?.offer_mode || 'mixed';
+  const singular = terms.offer_singular || (mode === 'service' ? 'servicio' : mode === 'product' ? 'producto' : 'oferta');
+  const plural = terms.offer_plural || (mode === 'service' ? 'servicios' : mode === 'product' ? 'productos' : 'ofertas');
+  return { singular, plural };
+}
+
 function imageBlock(url, alt, className = 'candidate-image') {
   if (!url || !/^https:\/\//i.test(url)) return `<div class="${className}"><span class="no-image">Sin imagen verificada</span></div>`;
   return `<div class="${className}"><img loading="lazy" src="${esc(url)}" alt="${esc(alt)}" referrerpolicy="no-referrer"></div>`;
@@ -62,11 +82,11 @@ function candidateCard(item) {
       <div class="candidate-body">
         <div class="candidate-rank"><strong>#${esc(item.rank)} · candidato</strong><span class="candidate-score">${esc(score)}</span></div>
         <h4>${esc(item.name)}</h4>
-        <p>${esc(item.concept || item.presentation || 'Pendiente de descripción técnica.')}</p>
+        <p>${esc(item.concept || item.presentation || 'Pendiente de definición.')}</p>
         <div class="candidate-signals">
           <div class="candidate-signal"><span>Aceptación</span><strong>${esc(band(item.acceptance_band))}</strong></div>
           <div class="candidate-signal"><span>Tendencia</span><strong>${esc(band(item.trend_strength))}</strong></div>
-          <div class="candidate-signal"><span>Afinidad AR</span><strong>${esc(band(item.argentina_fit))}</strong></div>
+          <div class="candidate-signal"><span>Afinidad local</span><strong>${esc(band(item.argentina_fit))}</strong></div>
           <div class="candidate-signal"><span>Potencial visual</span><strong>${esc(band(item.visual_potential))}</strong></div>
         </div>
         <p><strong>Presentación:</strong> ${esc(item.presentation || 'Pendiente')}</p>
@@ -78,10 +98,11 @@ function candidateCard(item) {
 
 function comparisonTable(candidates) {
   if (!candidates.length) return '<div class="discovery-empty"><p>No hay candidatos comparables todavía.</p></div>';
+  const { singular } = offerWords();
   return `
     <div class="comparison-wrap">
       <table class="comparison-table">
-        <thead><tr><th>#</th><th>Producto</th><th>Aceptación</th><th>Tendencia</th><th>Afinidad AR</th><th>Visual</th><th>Producción</th><th>Conservación</th><th>Costo</th><th>Estado</th></tr></thead>
+        <thead><tr><th>#</th><th>${esc(singular)}</th><th>Aceptación</th><th>Tendencia</th><th>Afinidad local</th><th>Visual</th><th>Ejecución</th><th>Riesgo específico</th><th>Costo</th><th>Estado</th></tr></thead>
         <tbody>${candidates.map((item) => `<tr>
           <td>${esc(item.rank)}</td><td><strong>${esc(item.name)}</strong></td>
           <td>${esc(band(item.acceptance_band))}${item.acceptance_score == null ? '' : ` · ${esc(Number(item.acceptance_score).toFixed(0))}/100`}</td>
@@ -110,19 +131,20 @@ function blueprintCard(blueprint, candidateById) {
   const conservation = blueprint.conservation && typeof blueprint.conservation === 'object'
     ? Object.values(blueprint.conservation).filter(Boolean).slice(0, 3).join(' · ')
     : '';
-  return `<article class="blueprint-card"><h5>${esc(candidate?.name || 'Ficha técnica')}</h5><div class="blueprint-grid">
-    <div class="blueprint-item"><strong>Porción</strong>${blueprint.portion_grams == null ? 'Pendiente' : `${esc(blueprint.portion_grams)} g`}</div>
-    <div class="blueprint-item"><strong>Rendimiento</strong>${blueprint.yield_units == null ? 'Pendiente' : `${esc(blueprint.yield_units)} unidades`}</div>
-    <div class="blueprint-item"><strong>Receta</strong>${ingredients} ingredientes · ${steps} pasos</div>
-    <div class="blueprint-item"><strong>Conservación</strong>${esc(conservation || 'Pendiente')}</div>
+  return `<article class="blueprint-card"><h5>${esc(candidate?.name || 'Definición operativa')}</h5><div class="blueprint-grid">
+    <div class="blueprint-item"><strong>Tamaño / alcance</strong>${blueprint.portion_grams == null ? 'Según el rubro' : `${esc(blueprint.portion_grams)} g`}</div>
+    <div class="blueprint-item"><strong>Rendimiento</strong>${blueprint.yield_units == null ? 'Según el rubro' : `${esc(blueprint.yield_units)} unidades`}</div>
+    <div class="blueprint-item"><strong>Componentes y pasos</strong>${ingredients} componentes · ${steps} pasos</div>
+    <div class="blueprint-item"><strong>Condiciones especiales</strong>${esc(conservation || 'Pendiente')}</div>
   </div>${blueprint.quality_notes ? `<p class="discovery-note">${esc(blueprint.quality_notes)}</p>` : ''}</article>`;
 }
 
 function emptyView() {
+  const { plural } = offerWords();
   return `
     <div class="discovery-shell" data-discovery-screen>
-      <section class="discovery-hero"><div><span class="eyebrow">Descubrimiento de producto</span><h3>Primero investigamos. Después producimos.</h3><p>Este módulo reúne evidencia nacional e internacional, presentaciones, sabores, señales de interacción y competencia para proponer tres candidatos. No se muestra un ranking sin fuentes verificables.</p></div></section>
-      <section class="discovery-empty"><h3>Todavía no hay una investigación registrada</h3><p>Pedile al Director una investigación de mercado con evidencia trazable. Cuando termine, acá aparecerán el Top 3, el cuadro comparativo, las referencias visuales y la exportación a Excel.</p><div style="margin-top:18px"><button class="primary" id="prepare-discovery-mission">Preparar misión de investigación</button></div></section>
+      <section class="discovery-hero"><div><span class="eyebrow">Descubrimiento de oportunidades</span><h3>Primero investigamos. Después decidimos.</h3><p>Este módulo usa el perfil real de la PyME para investigar mercado, competencia, tendencias y señales de demanda, y proponer ${esc(plural)} o líneas de oportunidad comparables. El núcleo es el mismo para cualquier rubro.</p></div></section>
+      <section class="discovery-empty"><h3>Todavía no hay una investigación registrada</h3><p>Pedile al Director una investigación de mercado con evidencia trazable. Cuando termine, acá aparecerán los candidatos, el cuadro comparativo, las referencias visuales y la exportación a Excel.</p><div style="margin-top:18px"><button class="primary" id="prepare-discovery-mission">Preparar misión de investigación</button></div></section>
     </div>`;
 }
 
@@ -131,17 +153,18 @@ function discoveryView(discovery) {
   const { run, candidates = [], evidence = [], blueprints = [] } = discovery;
   const candidateById = new Map(candidates.map((item) => [item.id, item]));
   const selectedCount = candidates.filter((item) => item.status === 'selected').length;
+  const { plural } = offerWords();
   return `
     <div class="discovery-shell" data-discovery-screen>
       <section class="discovery-hero">
-        <div><span class="eyebrow">Descubrimiento de producto</span><h3>${esc(run.title || 'Investigación de mercado')}</h3><p>${esc(run.objective || 'Comparación nacional e internacional orientada a decidir qué productos validar primero.')}</p><div class="discovery-note"><span class="discovery-status">${esc(statusLabel(run.status))}</span> · ${candidates.length} candidatos · ${evidence.length} evidencias</div></div>
+        <div><span class="eyebrow">Descubrimiento de oportunidades</span><h3>${esc(run.title || 'Investigación de mercado')}</h3><p>${esc(run.objective || 'Comparación de oportunidades orientada a decidir qué validar primero.')}</p><div class="discovery-note"><span class="discovery-status">${esc(statusLabel(run.status))}</span> · ${candidates.length} candidatos · ${evidence.length} evidencias</div></div>
         <div class="discovery-actions"><button class="secondary" id="discovery-copy-summary">Copiar resumen</button><button class="primary" id="discovery-export-excel">Exportar Excel</button></div>
       </section>
       <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Resumen ejecutivo</h4><p>Lectura corta para decidir desde computadora o teléfono.</p></div></div><div class="discovery-summary">${esc(run.executive_summary || 'La investigación todavía no tiene resumen ejecutivo.')}</div>${run.recommendation_notes ? `<div class="discovery-note"><strong>Nota:</strong> ${esc(run.recommendation_notes)}</div>` : ''}</section>
-      <section><div class="discovery-panel-head"><div><h4>Top de productos propuestos</h4><p>Ordenados por hipótesis de aceptación, no como garantía de ventas.</p></div>${run.status !== 'approved' ? '<button class="primary" id="approve-discovery-selection">Confirmar selección</button>' : `<span class="discovery-status">${selectedCount} seleccionados</span>`}</div><div class="discovery-grid">${candidates.slice(0, 6).map(candidateCard).join('')}</div></section>
-      <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Cuadro comparativo</h4><p>Señales comerciales, visuales y operativas en una sola vista.</p></div></div>${comparisonTable(candidates)}</section>
+      <section><div class="discovery-panel-head"><div><h4>Candidatos propuestos</h4><p>${esc(plural)} ordenados como hipótesis de aceptación, no como garantía de ventas.</p></div>${run.status !== 'approved' ? '<button class="primary" id="approve-discovery-selection">Confirmar selección</button>' : `<span class="discovery-status">${selectedCount} seleccionados</span>`}</div><div class="discovery-grid">${candidates.slice(0, 6).map(candidateCard).join('')}</div></section>
+      <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Cuadro comparativo</h4><p>Señales comerciales y operativas en una sola vista.</p></div></div>${comparisonTable(candidates)}</section>
       <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Evidencia e imágenes</h4><p>Cada referencia conserva fuente, mercado y nivel de confianza.</p></div></div>${evidence.length ? `<div class="evidence-grid">${evidence.slice(0, 16).map((item) => evidenceCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Todavía no hay evidencia visual cargada.</p></div>'}</section>
-      <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Ficha técnica posterior a la selección</h4><p>Receta, pasos, conservación y packaging se completan después de definir los productos.</p></div></div>${blueprints.length ? `<div class="blueprint-list">${blueprints.map((item) => blueprintCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Las fichas técnicas todavía no fueron generadas. Esto es correcto hasta confirmar los candidatos.</p></div>'}</section>
+      <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Definición operativa posterior a la selección</h4><p>El detalle posterior se adapta al rubro: receta y conservación, prestación del servicio, recursos, pasos, controles u otras condiciones.</p></div></div>${blueprints.length ? `<div class="blueprint-list">${blueprints.map((item) => blueprintCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>La definición operativa todavía no fue generada. Esto es correcto hasta confirmar los candidatos.</p></div>'}</section>
     </div>`;
 }
 
@@ -149,7 +172,7 @@ function setTopbar() {
   const title = document.querySelector('.topbar-title h2');
   const subtitle = document.querySelector('.topbar-title p');
   if (title) title.textContent = 'Descubrimiento';
-  if (subtitle) subtitle.textContent = 'Mercado, tendencias y selección de producto';
+  if (subtitle) subtitle.textContent = 'Mercado, tendencias y oportunidades';
 }
 
 function markNavigation() {
@@ -189,6 +212,7 @@ async function loadAndRender() {
   loading = true;
   content.innerHTML = '<div class="discovery-loading" data-discovery-screen>Cargando investigación…</div>';
   try {
+    await loadBusinessContext();
     const data = await request('/api/discovery');
     if (!discoveryActive) return;
     lastDiscovery = data.discovery || null;
@@ -206,6 +230,7 @@ async function activateDiscovery() {
   ensureNavigation();
   markNavigation();
   setTopbar();
+  await loadBusinessContext();
   await loadAndRender();
 }
 
@@ -220,7 +245,7 @@ async function exportExcel(button) {
     if (!response.ok) throw new Error(`No se pudo exportar Excel (${response.status}).`);
     const blob = await response.blob();
     const disposition = response.headers.get('content-disposition') || '';
-    const name = disposition.match(/filename="([^"]+)"/)?.[1] || 'Descubrimiento_Producto.xlsx';
+    const name = disposition.match(/filename="([^"]+)"/)?.[1] || 'Descubrimiento_Mercado.xlsx';
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -237,8 +262,8 @@ async function exportExcel(button) {
 
 async function approveSelection() {
   const checked = [...document.querySelectorAll('[data-candidate-choice]:checked')].map((input) => input.value);
-  if (!checked.length) return alert('Seleccioná al menos un producto.');
-  if (checked.length > 3) return alert('La primera validación admite hasta tres productos.');
+  if (!checked.length) return alert('Seleccioná al menos un candidato.');
+  if (checked.length > 3) return alert('La primera validación admite hasta tres candidatos.');
   const button = document.querySelector('#approve-discovery-selection');
   if (button) { button.disabled = true; button.textContent = 'Guardando…'; }
   try {
@@ -250,13 +275,41 @@ async function approveSelection() {
   }
 }
 
-function prepareMission() {
+function stringifyContext(value) {
+  try { return JSON.stringify(value || {}); } catch { return '{}'; }
+}
+
+function buildDiscoveryMission() {
+  const business = businessContext?.business || {};
+  const p = profile();
+  const discovery = p?.discovery_context || {};
+  const target = p?.target_market || {};
+  const vertical = p?.vertical_config || {};
+  const { plural } = offerWords();
+  return [
+    `Investigá en profundidad oportunidades de mercado para ${business.name || 'esta PyME'}, ubicada en ${business.city || 'su mercado local'}, ${business.province || ''}, ${business.country || ''}.`,
+    p?.industry ? `Rubro: ${p.industry}.` : '',
+    p?.business_model ? `Modelo de negocio: ${p.business_model}.` : '',
+    `El objetivo es proponer exactamente tres ${plural} o líneas de oportunidad comparables, ordenadas del 1 al 3 como hipótesis de mayor a menor aceptación comercial inicial.`,
+    `Usá fuentes actuales y reales mediante búsqueda web. Relevá el mercado local/nacional y también mercados internacionales relevantes como referencia adelantada.`,
+    `No tomes likes o visualizaciones aisladas como equivalentes a ventas y no inventes métricas privadas de competidores. Conservá URLs reales y fechas de la evidencia.`,
+    `Evaluá señales de interés, competencia, tendencia, diferenciación, ajuste al mercado objetivo, atractivo/presentación cuando corresponda, factibilidad operativa, riesgos específicos del rubro y complejidad probable de costos.`,
+    `Contexto de descubrimiento configurado por la PyME: ${stringifyContext(discovery)}.`,
+    `Mercado objetivo configurado: ${stringifyContext(target)}.`,
+    `Configuración vertical relevante: ${stringifyContext(vertical)}.`,
+    `Si el rubro es de alimentos, incluí además presentación, sabores, conservación y dificultad productiva. Si es un servicio, reemplazá esos criterios por experiencia, capacidad de prestación, recursos, tiempos y riesgo operativo. No fuerces criterios que no correspondan al rubro.`,
+    `Si la evidencia es suficiente, generá la acción market_research para guardar el estudio en Descubrimiento. No publiques, no gastes dinero y no contactes terceros.`,
+  ].filter(Boolean).join(' ');
+}
+
+async function prepareMission() {
+  await loadBusinessContext();
   discoveryActive = false;
   document.querySelector('[data-view="director"]')?.click();
   setTimeout(() => {
     const input = document.querySelector('#mission');
     if (!input) return;
-    input.value = 'Investigá en profundidad el mercado de postres individuales para Postres Experiencia, considerando una presentación visual atractiva en envase transparente tipo lata y el inicio del negocio en Río Gallegos, Argentina. Investigá fuentes actuales y reales usando búsqueda web. Relevá Argentina y mercados internacionales relevantes. Analizá presentaciones, envases, productos y sabores con señales observables de interacción e interés, competencia, formatos visuales y oportunidades poco explotadas localmente. No tomes likes o visualizaciones aisladas como equivalentes a ventas ni inventes métricas privadas. Cruzá evidencia externa con afinidad argentina, potencial visual, diferenciación, dificultad productiva, conservación y complejidad probable de costos. Proponé exactamente tres variedades, ordenadas del 1 al 3 según hipótesis de mayor a menor aceptación comercial inicial, conservando URLs reales y fechas. Si la evidencia es suficiente, generá la acción market_research para guardar el estudio en Descubrimiento. No publiques, no gastes dinero y no contactes terceros.';
+    input.value = buildDiscoveryMission();
     input.focus();
   }, 80);
 }
@@ -272,12 +325,12 @@ function bindDiscoveryActions() {
     setTimeout(() => { button.textContent = original; }, 1500);
   });
   document.querySelector('#approve-discovery-selection')?.addEventListener('click', approveSelection);
-  document.querySelector('#prepare-discovery-mission')?.addEventListener('click', prepareMission);
+  document.querySelector('#prepare-discovery-mission')?.addEventListener('click', () => prepareMission().catch((error) => alert(error.message)));
   document.querySelectorAll('[data-candidate-choice]').forEach((input) => input.addEventListener('change', () => {
     const checked = document.querySelectorAll('[data-candidate-choice]:checked');
     if (checked.length > 3) {
       input.checked = false;
-      alert('Podés seleccionar hasta tres productos para la primera validación.');
+      alert('Podés seleccionar hasta tres candidatos para la primera validación.');
     }
   }));
 }
