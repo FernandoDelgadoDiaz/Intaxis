@@ -22,6 +22,25 @@ alter table public.product_discovery_blueprints
   add column if not exists reference_media jsonb not null default '[]'::jsonb,
   add column if not exists aspirational_media jsonb not null default '{}'::jsonb;
 
+alter table public.product_discovery_runs
+  add column if not exists enrichment_status text not null default 'not_started'
+    check (enrichment_status in ('not_started','pending','queued','running','completed','partial','failed')),
+  add column if not exists enrichment_stage text not null default 'awaiting_technical_definition',
+  add column if not exists enrichment_agent_run_id uuid references public.agent_runs(id) on delete set null,
+  add column if not exists enrichment_started_at timestamptz,
+  add column if not exists enrichment_completed_at timestamptz,
+  add column if not exists enrichment_error_message text;
+
+update public.product_discovery_runs
+set enrichment_status = 'pending',
+    enrichment_stage = 'selected_offer_enrichment'
+where status = 'approved'
+  and development_status in ('completed','partial')
+  and enrichment_status = 'not_started';
+
+create index if not exists product_discovery_runs_enrichment_idx
+  on public.product_discovery_runs(business_id, enrichment_status, updated_at desc);
+
 comment on column public.products.source_discovery_candidate_id is
 'Oportunidad de Descubrimiento que originó esta oferta de Mi Negocio.';
 comment on column public.products.development_phase is
@@ -34,6 +53,10 @@ comment on column public.products.aspirational_media is
 'Representación aspiracional generada a partir de una estrategia visual fundamentada.';
 comment on column public.products.primary_media is
 'Imagen o medio real principal de la oferta; reemplaza visualmente a la aspiracional cuando existe.';
+comment on column public.product_discovery_blueprints.human_instructions is
+'Instrucciones humanas, conversacionales y simples derivadas de la definición técnica sin reemplazarla.';
+comment on column public.product_discovery_runs.enrichment_status is
+'Estado del enriquecimiento posterior al desarrollo técnico: referencias, estrategia visual, imagen aspiracional y capa humana.';
 
 -- Los candidatos ya aprobados pasan a Mi Negocio como ofertas en desarrollo.
 insert into public.products (
