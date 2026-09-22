@@ -1,12 +1,12 @@
-name: Agentic Pymes chat query smoke
+name: Agentic Pymes chat transport smoke
 
 on:
   pull_request:
     paths:
       - 'src/app.js'
+      - 'src/chat-transport.js'
       - 'src/routes/chat.js'
       - 'src/web.js'
-      - 'docs/BUGFIX_CHAT_QUERY_0_3_3.md'
       - '.github/workflows/chat-query-smoke.yml'
 
 jobs:
@@ -17,6 +17,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Verify chat query fallback source
+      - name: Verify Director mission transport
         run: |
-          node -e "const fs=require('fs'); const s=fs.readFileSync('src/app.js','utf8'); if(!s.includes(\"typeof req.query?.mensaje === 'string'\")) process.exit(1); if(s.includes(\"req.path === '/api/chat'\")) process.exit(1); if(!s.includes('0.3.3-chat-query-direct')) process.exit(1);"
+          node -e "const fs=require('fs'); const app=fs.readFileSync('src/app.js','utf8'); const transport=fs.readFileSync('src/chat-transport.js','utf8'); if(!app.includes(\"req.get('x-agentic-mission')\")) process.exit(1); if(!app.includes('decodeURIComponent(encodedHeader)')) process.exit(1); if(!app.includes('0.3.4-chat-header')) process.exit(1); if(!transport.includes(\"headers.set('X-Agentic-Mission', encodeURIComponent(mission))\")) process.exit(1); if(!transport.includes('mensaje=${encodeURIComponent(mission)}')) process.exit(1);"
