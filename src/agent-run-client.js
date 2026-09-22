@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 let supabase;
 let configPromise;
+let observedMessagesNode = null;
 const pollers = new Set();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,12 +36,14 @@ async function request(path, options = {}) {
     },
   });
   const type = response.headers.get('content-type') || '';
-  if (!response.ok) {
-    const body = type.includes('application/json') ? await response.json().catch(() => ({})) : {};
-    throw new Error(body.error || `Error ${response.status}`);
+  const text = await response.text();
+  let body = null;
+  if (type.includes('application/json') && text) {
+    try { body = JSON.parse(text); } catch { body = null; }
   }
-  if (type.includes('application/json')) return response.json();
-  return response;
+  if (!response.ok) throw new Error(body?.error || `Error ${response.status}`);
+  if (body) return body;
+  return { ok: true, status: response.status };
 }
 
 function addMessage(container, role, text, extraClass = '') {
@@ -62,6 +65,7 @@ function renderRuns(runs) {
   const messages = document.querySelector('#messages');
   if (!messages) return;
 
+  observedMessagesNode = messages;
   messages.replaceChildren();
   addMessage(messages, 'assistant', 'Mi Negocio está conectado. Podés plantear una decisión, un problema o una oportunidad. El equipo distinguirá datos reales, evidencia externa y faltantes antes de decidir.');
 
@@ -113,11 +117,8 @@ async function pollRun(runId) {
         const data = await request(`/api/chat/runs/${encodeURIComponent(runId)}`);
         const run = data.run;
         if (!run) continue;
-        if (['completed', 'failed', 'cancelled'].includes(run.status)) {
-          await hydrateChat();
-          return;
-        }
         await hydrateChat();
+        if (['completed', 'failed', 'cancelled'].includes(run.status)) return;
       } catch {
         if (!navigator.onLine) continue;
       }
@@ -193,7 +194,15 @@ document.addEventListener('keydown', (event) => {
 }, true);
 
 const observer = new MutationObserver(() => {
-  if (document.querySelector('#messages')) hydrateChat();
+  const current = document.querySelector('#messages');
+  if (!current) {
+    observedMessagesNode = null;
+    return;
+  }
+  if (current !== observedMessagesNode) {
+    observedMessagesNode = current;
+    hydrateChat();
+  }
 });
 observer.observe(document.querySelector('#app'), { childList: true, subtree: true });
 
