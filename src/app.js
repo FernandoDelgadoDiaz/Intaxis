@@ -4,17 +4,29 @@ import { chatRouter } from './routes/chat.js';
 import { exportRouter } from './routes/export.js';
 
 export const app = express();
-export const BUILD_VERSION = '0.3.3-chat-query-direct';
+export const BUILD_VERSION = '0.3.4-chat-header';
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.text({ type: 'text/plain', limit: '1mb' }));
 
-// Netlify puede reescribir /api/chat antes de que Express vea la ruta original.
-// Por eso no dependemos de req.path: cualquier POST que transporte `mensaje`
-// en query puede reconstruir el body si el adaptador serverless lo perdió.
+// Transporte robusto para Netlify/serverless.
+// Prioridad: header explícito > query > body original.
+// El header viaja codificado para evitar problemas con caracteres no ASCII.
 app.use((req, _res, next) => {
+  if (req.method !== 'POST') return next();
+
+  const encodedHeader = req.get('x-agentic-mission');
+  if (typeof encodedHeader === 'string' && encodedHeader.trim()) {
+    try {
+      req.body = { mensaje: decodeURIComponent(encodedHeader) };
+      return next();
+    } catch {
+      req.body = { mensaje: encodedHeader };
+      return next();
+    }
+  }
+
   if (
-    req.method === 'POST' &&
     typeof req.query?.mensaje === 'string' &&
     (
       req.body == null ||
@@ -24,6 +36,7 @@ app.use((req, _res, next) => {
   ) {
     req.body = { mensaje: req.query.mensaje };
   }
+
   next();
 });
 
