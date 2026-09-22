@@ -29,6 +29,11 @@ export async function loadBusinessSnapshot(supabase, businessId) {
     supabase.from('capacity_settings').select('*').eq('business_id', businessId).order('valid_from', { ascending: false }).limit(10),
     supabase.from('business_decisions').select('*').eq('business_id', businessId).order('effective_at', { ascending: false }).limit(30),
     supabase.from('business_hypotheses').select('*').eq('business_id', businessId).order('updated_at', { ascending: false }).limit(30),
+    supabase.from('autonomy_policies')
+      .select('id,action_type,mode,min_confidence,max_amount_ars,conditions,active,updated_at')
+      .eq('business_id', businessId)
+      .eq('active', true)
+      .order('action_type'),
     supabase.from('agent_runs')
       .select('id,mission,status,specialist_count,estimated_model_cost_usd,usage_complete,technology_cost_class,completed_at')
       .eq('business_id', businessId)
@@ -37,8 +42,8 @@ export async function loadBusinessSnapshot(supabase, businessId) {
       .limit(30),
   ];
 
-  const [products, ingredients, recipes, recipeItems, movements, capacity, decisions, hypotheses, technologyRuns] = await Promise.all(queries);
-  for (const result of [products, ingredients, recipes, recipeItems, movements, capacity, decisions, hypotheses, technologyRuns]) {
+  const [products, ingredients, recipes, recipeItems, movements, capacity, decisions, hypotheses, autonomyPolicies, technologyRuns] = await Promise.all(queries);
+  for (const result of [products, ingredients, recipes, recipeItems, movements, capacity, decisions, hypotheses, autonomyPolicies, technologyRuns]) {
     if (result.error) throw result.error;
   }
 
@@ -64,6 +69,7 @@ export async function loadBusinessSnapshot(supabase, businessId) {
     capacity: capacity.data || [],
     decisions: decisions.data || [],
     hypotheses: hypotheses.data || [],
+    autonomy_policies: autonomyPolicies.data || [],
     technology_costs: {
       recent_runs: recentTechnologyRuns,
       known_model_cost_usd: Number(knownTechnologyCostUsd.toFixed(8)),
@@ -87,6 +93,14 @@ export function contextForAgent(business, snapshot) {
     recetas: snapshot.recipes,
     componentes_receta: snapshot.recipe_items,
     capacidad: snapshot.capacity,
+    politicas_autonomia: (snapshot.autonomy_policies || []).map((item) => ({
+      action_type: item.action_type,
+      mode: item.mode,
+      min_confidence: Number(item.min_confidence),
+      max_amount_ars: item.max_amount_ars == null ? null : Number(item.max_amount_ars),
+      conditions: item.conditions || {},
+      updated_at: item.updated_at,
+    })),
     decisiones: snapshot.decisions.filter((item) => item.status === 'active').slice(0, 15),
     hipotesis: snapshot.hypotheses.filter((item) => ['open', 'testing'].includes(item.status)).slice(0, 15),
     costo_tecnologico: snapshot.technology_costs,
