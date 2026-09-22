@@ -42,11 +42,20 @@ function failedSpecialistResult(message) {
   };
 }
 
-chatRouter.get('/team', async (_req, res) => {
+chatRouter.get('/team', async (req, res) => {
+  await authenticatedUser(req);
   const team = await getAgentTeam();
+  const publicShape = (item) => ({
+    key: item.key,
+    name: item.name,
+    purpose: item.purpose,
+    activation: item.activation,
+  });
   res.json({
-    director: team.director,
-    specialists: Object.values(team).filter((item) => item.key !== 'director'),
+    director: publicShape(team.director),
+    specialists: Object.values(team)
+      .filter((item) => item.key !== 'director')
+      .map(publicShape),
   });
 });
 
@@ -215,8 +224,6 @@ chatRouter.post('/chat', async (req, res) => {
         key: item.key,
         name: item.name,
         task: item.task,
-        agentId: item.agentId,
-        sessionId: item.sessionId,
         confidence: item.result?.confidence || 'low',
       })),
     });
