@@ -4,6 +4,8 @@ import { getOwnedBusiness, requireBusiness, loadBusinessSnapshot } from '../busi
 
 export const businessRouter = Router();
 const clean = (value) => String(value || '').trim();
+const jsonObject = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+const offerModes = new Set(['product', 'service', 'mixed']);
 
 businessRouter.get('/mi-negocio', async (req, res) => {
   const { supabase } = await authenticatedUser(req);
@@ -16,14 +18,67 @@ businessRouter.post('/mi-negocio/bootstrap', async (req, res) => {
   const { supabase, user } = await authenticatedUser(req);
   const existing = await getOwnedBusiness(supabase);
   if (existing) return res.json({ business: existing, created: false });
+
+  const name = clean(req.body?.name);
+  const city = clean(req.body?.city);
+  const province = clean(req.body?.province);
+  const country = clean(req.body?.country);
+  const timezone = clean(req.body?.timezone);
+  const currency = clean(req.body?.currency);
+  if (!name || !city || !province || !country || !timezone || !currency) {
+    return res.status(400).json({ error: 'Para crear una PyME se necesitan nombre, ubicación, zona horaria y moneda.' });
+  }
+
   const { data, error } = await supabase.from('businesses').insert({
     owner_user_id: user.id,
-    name: clean(req.body?.name) || 'Postres Experiencia',
-    city: 'Río Gallegos', province: 'Santa Cruz', country: 'Argentina',
-    timezone: 'America/Argentina/Rio_Gallegos', stage: 'validacion', currency: 'ARS',
+    name,
+    city,
+    province,
+    country,
+    timezone,
+    stage: clean(req.body?.stage) || 'validacion',
+    currency,
   }).select('*').single();
   if (error) throw error;
+
+  const profile = req.body?.profile;
+  if (profile && typeof profile === 'object' && !Array.isArray(profile)) {
+    const profileResult = await supabase.from('business_profiles').upsert({
+      business_id: data.id,
+      industry: clean(profile.industry) || null,
+      business_model: clean(profile.business_model) || null,
+      offer_mode: offerModes.has(profile.offer_mode) ? profile.offer_mode : 'mixed',
+      target_market: jsonObject(profile.target_market),
+      discovery_context: jsonObject(profile.discovery_context),
+      operational_context: jsonObject(profile.operational_context),
+      terminology: jsonObject(profile.terminology),
+      vertical_config: jsonObject(profile.vertical_config),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'business_id' });
+    if (profileResult.error) throw profileResult.error;
+  }
+
   res.status(201).json({ business: data, created: true });
+});
+
+businessRouter.put('/mi-negocio/profile', async (req, res) => {
+  const { supabase } = await authenticatedUser(req);
+  const business = await requireBusiness(supabase);
+  const mode = offerModes.has(req.body?.offer_mode) ? req.body.offer_mode : 'mixed';
+  const { data, error } = await supabase.from('business_profiles').upsert({
+    business_id: business.id,
+    industry: clean(req.body?.industry) || null,
+    business_model: clean(req.body?.business_model) || null,
+    offer_mode: mode,
+    target_market: jsonObject(req.body?.target_market),
+    discovery_context: jsonObject(req.body?.discovery_context),
+    operational_context: jsonObject(req.body?.operational_context),
+    terminology: jsonObject(req.body?.terminology),
+    vertical_config: jsonObject(req.body?.vertical_config),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'business_id' }).select('*').single();
+  if (error) throw error;
+  res.json({ profile: data });
 });
 
 businessRouter.post('/products', async (req, res) => {
