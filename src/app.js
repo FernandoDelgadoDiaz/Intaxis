@@ -9,7 +9,7 @@ import { opportunityDevelopmentRouter } from './routes/opportunity-development.j
 import { offerEnrichmentRouter } from './routes/offer-enrichment.js';
 
 export const app = express();
-export const BUILD_VERSION = '0.11.2-autonomous-enrichment-handoff';
+export const BUILD_VERSION = '0.11.3-enrichment-stage-resume';
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.text({ type: 'text/plain', limit: '1mb' }));

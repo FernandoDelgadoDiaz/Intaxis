@@ -1,6 +1,6 @@
 import { authenticatedUser } from '../../src/supabase.js';
 import { requireBusiness } from '../../src/business-context.js';
-import { processOfferEnrichment } from '../../src/offer-enrichment.js';
+import { processOfferEnrichmentResumable } from '../../src/offer-enrichment-resume.js';
 
 function bodyFromEvent(event) {
   const raw = event?.isBase64Encoded
@@ -23,7 +23,7 @@ export const handler = async (event) => {
     const { supabase } = await authenticatedUser(req);
     const business = await requireBusiness(supabase);
 
-    await processOfferEnrichment({
+    await processOfferEnrichmentResumable({
       supabase,
       business,
       discoveryRunId,
