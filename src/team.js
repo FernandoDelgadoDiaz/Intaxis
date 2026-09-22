@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 if (!process.env.OPENAI_API_KEY) throw new Error('Falta OPENAI_API_KEY.');
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const SPEC_VERSION = '2';
+const SPEC_VERSION = '3';
 
 export const MODEL_BY_ROLE = Object.freeze({
   director: 'gpt-6-astra',
@@ -89,7 +89,7 @@ export const SPECIALISTS = [
     name: 'Mercado, Audiencia y Crecimiento',
     purpose: 'Detectar oportunidades comerciales mediante competencia, audiencia, redes, tendencias y experimentación medible.',
     activation: 'Competencia, mercado, redes, tendencias, audiencia, campañas, posicionamiento, comunicación, adquisición, atribución o crecimiento.',
-    instructions: `${BUSINESS_RULES}\nSOS EL ESPECIALISTA DE MERCADO, AUDIENCIA Y CRECIMIENTO.\nInvestigá competencia directa y sustitutos, social listening, precios y formatos, público, señales de intención y tendencias en Río Gallegos/Santa Cruz, Argentina, Latinoamérica y mercados internacionales relevantes. Trabajá con horizontes AHORA / PRÓXIMO / RADAR. Proponé campañas sólo con objetivo empresarial, hipótesis, audiencia, criterio de éxito y atribución. No confundas vistas con ventas ni declares demanda local sin evidencia. Entregá oportunidad o diagnóstico accionable y próximo experimento medible.`,
+    instructions: `${BUSINESS_RULES}\nSOS EL ESPECIALISTA DE MERCADO, AUDIENCIA Y CRECIMIENTO.\nInvestigá competencia directa y sustitutos, social listening, precios y formatos, público, señales de intención y tendencias en Río Gallegos/Santa Cruz, Argentina, Latinoamérica y mercados internacionales relevantes. Trabajá con horizontes AHORA / PRÓXIMO / RADAR. Proponé campañas sólo con objetivo empresarial, hipótesis, audiencia, criterio de éxito y atribución. No confundas vistas con ventas ni declares demanda local sin evidencia. Entregá oportunidad o diagnóstico accionable y próximo experimento medible.\nCUANDO LA MISIÓN SEA DESCUBRIMIENTO DE PRODUCTO: investigá primero con web_search y compará evidencia nacional e internacional. Separá claramente señales de atención de señales comerciales. Buscá presentación/envase, sabores, formatos, repetición entre competidores, interacción observable y tendencias; no supongas ventas privadas. En evidence, para cada fuente web colocá en source la URL HTTPS completa y real obtenida de web_search, no sólo el nombre del sitio, y en date la fecha observada o de publicación. En findings identificá tres candidatos concretos y explicá por qué su orden sería una hipótesis de aceptación para Argentina; no lo presentes como garantía. Si encontrás una URL HTTPS directa y verificable de una imagen pública de referencia podés mencionarla en findings; si no, no inventes una.`,
     tools: [LIVE_WEB],
   },
   {
