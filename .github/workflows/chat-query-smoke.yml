@@ -19,4 +19,10 @@ jobs:
           node-version: '24'
       - name: Verify Director mission transport
         run: |
-          node -e "const fs=require('fs'); const app=fs.readFileSync('src/app.js','utf8'); const transport=fs.readFileSync('src/chat-transport.js','utf8'); if(!app.includes(\"req.get('x-agentic-mission')\")) process.exit(1); if(!app.includes('decodeURIComponent(encodedHeader)')) process.exit(1); if(!app.includes('0.3.4-chat-header')) process.exit(1); if(!transport.includes(\"headers.set('X-Agentic-Mission', encodeURIComponent(mission))\")) process.exit(1); if(!transport.includes('mensaje=${encodeURIComponent(mission)}')) process.exit(1);"
+          grep -F "req.get('x-agentic-mission')" src/app.js
+          grep -F "decodeURIComponent(encodedHeader)" src/app.js
+          grep -F "0.3.4-chat-header" src/app.js
+          grep -F "headers.set('X-Agentic-Mission', encodeURIComponent(mission))" src/chat-transport.js
+          grep -F 'mensaje=${encodeURIComponent(mission)}' src/chat-transport.js
+          node --check src/app.js
+          node --check src/chat-transport.js
