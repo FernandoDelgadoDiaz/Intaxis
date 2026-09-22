@@ -3,28 +3,28 @@ import OpenAI from 'openai';
 if (!process.env.OPENAI_API_KEY) throw new Error('Falta OPENAI_API_KEY.');
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const SPEC_VERSION = '3';
+const SPEC_VERSION = '4';
 
 export const MODEL_BY_ROLE = Object.freeze({
-  director: 'gpt-6-astra',
-  market_growth: 'gpt-5.6-terra',
-  product_experience: 'gpt-5.6-terra',
-  finance_profitability: 'gpt-5.6-terra',
-  sales_customers: 'gpt-5.6-luna',
-  production_supply: 'gpt-5.6-luna',
-  quality_compliance: 'gpt-5.6-terra',
-  information_decisions: 'gpt-5.6-terra',
+  director: 'gpt-5.6-sol',
+  market_growth: 'gpt-5.6-sol',
+  product_experience: 'gpt-5.6-sol',
+  finance_profitability: 'gpt-5.6-sol',
+  sales_customers: 'gpt-5.6-terra',
+  production_supply: 'gpt-5.6-terra',
+  quality_compliance: 'gpt-5.6-sol',
+  information_decisions: 'gpt-5.6-sol',
 });
 
 const REASONING_BY_ROLE = Object.freeze({
-  director: 'low',
-  market_growth: 'medium',
-  product_experience: 'medium',
-  finance_profitability: 'medium',
-  sales_customers: 'low',
-  production_supply: 'low',
-  quality_compliance: 'medium',
-  information_decisions: 'medium',
+  director: 'high',
+  market_growth: 'high',
+  product_experience: 'high',
+  finance_profitability: 'high',
+  sales_customers: 'medium',
+  production_supply: 'high',
+  quality_compliance: 'high',
+  information_decisions: 'high',
 });
 
 const BUSINESS_RULES = `
@@ -39,7 +39,7 @@ PRINCIPIOS COMUNES DE AGENTIC PYMES
 - Priorizá experimentos pequeños, baratos, reversibles y medibles.
 - Investigar y preparar propuestas no requiere autorización. Gastar dinero, publicar, contactar terceros, aceptar pedidos, cobrar o comprometer entregas requiere autorización explícita salvo regla previa aprobada.
 - Si no hay evidencia suficiente, decilo y pedí el dato mínimo necesario mediante data_gaps; no rellenes huecos.
-- La capacidad del modelo es un recurso económico: usá la menor complejidad necesaria para entregar evidencia y decisión de calidad.
+- La confiabilidad de una decisión empresarial prevalece sobre el ahorro de tokens. El costo tecnológico se optimiza eliminando trabajo innecesario, no degradando el modelo cuando la calidad puede cambiar una decisión.
 `;
 
 const SPECIALIST_OUTPUT_SCHEMA = {
@@ -155,7 +155,7 @@ REGLAS:
 - Mi Negocio prevalece sobre recuerdos conversacionales. Nunca inventes datos.
 - Si hay desacuerdo, explicitá qué evidencia lo resolvería.
 - Investigar y proponer puede hacerse sin autorización; publicar, gastar dinero, contactar terceros, cobrar, aceptar pedidos o comprometer entregas requiere autorización explícita salvo regla previa.
-- Considerá el costo tecnológico como recurso económico y evitá activar agentes innecesarios.
+- La confiabilidad de la decisión prevalece sobre el ahorro de tokens. Reducí costo evitando especialistas o llamadas innecesarias, no usando deliberadamente un modelo insuficiente para una decisión material.
 - Priorizá el experimento de menor costo que reduzca mayor incertidumbre.
 
 MODO PLAN
@@ -172,7 +172,7 @@ Usá: # Decisión principal; ## Resumen ejecutivo; ## Evidencia de Mi Negocio; #
 
 function specialistTextConfig() {
   return {
-    verbosity: 'low',
+    verbosity: 'medium',
     format: { type: 'json_schema', schema: SPECIALIST_OUTPUT_SCHEMA },
   };
 }
@@ -185,14 +185,14 @@ function desiredAgentConfig(definition) {
     model,
     name: definition.name,
     instructions: definition.instructions,
-    reasoning: { effort: REASONING_BY_ROLE[definition.key] || 'low' },
+    reasoning: { effort: REASONING_BY_ROLE[definition.key] || 'medium' },
     tools: definition.tools,
     ...(specialist ? { text: specialistTextConfig() } : {}),
     metadata: {
       app: 'agentic-pymes',
       role: definition.key,
       spec_version: SPEC_VERSION,
-      model_policy: 'cost-efficient-v1',
+      model_policy: 'reliability-first-v1',
     },
   };
 }

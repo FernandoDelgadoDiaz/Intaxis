@@ -8,7 +8,9 @@
 export const PRICING_VERSION = 'openai-standard-short-context-2026-09-22';
 
 export const MODEL_PRICING_USD_PER_MILLION = Object.freeze({
+  // Se conserva Astra para estimar ejecuciones históricas ya registradas.
   'gpt-6-astra': { input: 10, cachedInput: 1, output: 50 },
+  'gpt-5.6-sol': { input: 4, cachedInput: 0.4, output: 20 },
   'gpt-5.6-terra': { input: 2, cachedInput: 0.2, output: 12 },
   'gpt-5.6-luna': { input: 0.2, cachedInput: 0.02, output: 1.2 },
 });
