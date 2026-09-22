@@ -11,6 +11,15 @@ const ACTION_TYPES = new Set([
 
 const clamp01 = (value) => Math.min(1, Math.max(0, Number(value) || 0));
 const clean = (value) => String(value ?? '').trim();
+const cleanHttps = (value) => {
+  const text = clean(value);
+  return /^https:\/\//i.test(text) ? text : null;
+};
+const band = (value) => ['low', 'medium', 'high'].includes(value) ? value : null;
+const marketScope = (value) => ['local', 'national', 'latam', 'international'].includes(value) ? value : null;
+const evidenceType = (value) => [
+  'presentation', 'flavor', 'engagement', 'trend', 'price', 'competitor', 'packaging', 'comment_signal', 'other',
+].includes(value) ? value : 'other';
 
 export function normalizeDirectorAction(input) {
   if (!input || !ACTION_TYPES.has(input.type)) return null;
@@ -256,6 +265,186 @@ async function executeContentDraft({ supabase, business, request }) {
   return { content_item_id: data.id, status: data.status };
 }
 
+function marketResearchGap(message) {
+  const error = new Error(message);
+  error.code = 'AUTONOMY_DATA_GAP';
+  return error;
+}
+
+function normalizeDiscoveryCandidate(candidate) {
+  const rank = Number(candidate?.rank);
+  const score = candidate?.acceptance_score == null || candidate?.acceptance_score === ''
+    ? null
+    : Number(candidate.acceptance_score);
+  return {
+    rank,
+    name: clean(candidate?.name),
+    concept: clean(candidate?.concept) || null,
+    presentation: clean(candidate?.presentation) || null,
+    acceptance_score: Number.isFinite(score) ? Math.min(100, Math.max(0, score)) : null,
+    acceptance_band: band(candidate?.acceptance_band),
+    trend_strength: band(candidate?.trend_strength),
+    argentina_fit: band(candidate?.argentina_fit),
+    visual_potential: band(candidate?.visual_potential),
+    production_complexity: band(candidate?.production_complexity),
+    conservation_risk: band(candidate?.conservation_risk),
+    cost_complexity: band(candidate?.cost_complexity),
+    rationale: clean(candidate?.rationale),
+    image_url: cleanHttps(candidate?.image_url),
+    image_source_url: cleanHttps(candidate?.image_source_url),
+  };
+}
+
+function validateMarketResearchPayload(payload) {
+  const candidates = Array.isArray(payload?.candidates) ? payload.candidates.map(normalizeDiscoveryCandidate) : [];
+  if (candidates.length !== 3) throw marketResearchGap('La investigación debe entregar exactamente tres candidatos comparables.');
+  const ranks = candidates.map((item) => item.rank).sort((a, b) => a - b);
+  if (ranks.join(',') !== '1,2,3') throw marketResearchGap('Los tres candidatos deben tener rankings únicos 1, 2 y 3.');
+  if (candidates.some((item) => !item.name || !item.rationale)) {
+    throw marketResearchGap('Cada candidato necesita nombre y fundamento trazable antes de persistirse.');
+  }
+
+  const evidence = Array.isArray(payload?.evidence) ? payload.evidence : [];
+  if (!evidence.length) throw marketResearchGap('La investigación no contiene evidencia externa trazable.');
+  const normalizedEvidence = evidence.map((item) => {
+    const rank = Number(item?.candidate_rank);
+    const scope = marketScope(item?.market_scope);
+    const sourceUrl = cleanHttps(item?.source_url);
+    const claim = clean(item?.claim);
+    const observedAt = clean(item?.observed_at);
+    const metricValue = item?.metric_value == null || item?.metric_value === '' ? null : Number(item.metric_value);
+    if (![1, 2, 3].includes(rank) || !scope || !sourceUrl || !claim || !observedAt) {
+      throw marketResearchGap('Cada evidencia debe identificar candidato, mercado, URL HTTPS real, hallazgo y fecha observada.');
+    }
+    return {
+      candidate_rank: rank,
+      market_scope: scope,
+      country: clean(item?.country) || null,
+      source_name: clean(item?.source_name) || sourceUrl,
+      source_url: sourceUrl,
+      source_type: clean(item?.source_type) || 'web',
+      evidence_type: evidenceType(item?.evidence_type),
+      claim,
+      metric_name: clean(item?.metric_name) || null,
+      metric_value: Number.isFinite(metricValue) ? metricValue : null,
+      metric_unit: clean(item?.metric_unit) || null,
+      image_url: cleanHttps(item?.image_url),
+      observed_at: observedAt,
+      confidence: band(item?.confidence) || 'medium',
+      metadata: item?.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata) ? item.metadata : {},
+    };
+  });
+
+  for (const rank of [1, 2, 3]) {
+    if (!normalizedEvidence.some((item) => item.candidate_rank === rank)) {
+      throw marketResearchGap(`El candidato #${rank} no tiene evidencia externa trazable.`);
+    }
+  }
+  const scopes = new Set(normalizedEvidence.map((item) => item.market_scope));
+  if (!scopes.has('national') || !scopes.has('international')) {
+    throw marketResearchGap('Para cerrar Descubrimiento se necesita evidencia nacional e internacional.');
+  }
+
+  const executiveSummary = clean(payload?.executive_summary);
+  if (!executiveSummary) throw marketResearchGap('Falta el resumen ejecutivo de la investigación.');
+
+  return {
+    title: clean(payload?.title),
+    objective: clean(payload?.objective) || null,
+    scope: payload?.scope && typeof payload.scope === 'object' && !Array.isArray(payload.scope) ? payload.scope : {},
+    executive_summary: executiveSummary,
+    recommendation_notes: clean(payload?.recommendation_notes) || null,
+    candidates,
+    evidence: normalizedEvidence,
+  };
+}
+
+async function executeMarketResearch({ supabase, business, request }) {
+  const research = validateMarketResearchPayload(request.payload || {});
+  let discoveryRunId = null;
+  try {
+    const runResult = await supabase.from('product_discovery_runs').insert({
+      business_id: business.id,
+      agent_run_id: request.agent_run_id || null,
+      title: research.title || request.title || 'Descubrimiento de producto',
+      objective: research.objective,
+      status: 'ready',
+      scope: research.scope,
+      executive_summary: research.executive_summary,
+      recommendation_notes: research.recommendation_notes,
+      completed_at: new Date().toISOString(),
+    }).select('*').single();
+    if (runResult.error) throw runResult.error;
+    discoveryRunId = runResult.data.id;
+
+    const candidateRows = research.candidates.map((item) => ({
+      business_id: business.id,
+      discovery_run_id: discoveryRunId,
+      rank: item.rank,
+      name: item.name,
+      concept: item.concept,
+      presentation: item.presentation,
+      acceptance_score: item.acceptance_score,
+      acceptance_band: item.acceptance_band,
+      trend_strength: item.trend_strength,
+      argentina_fit: item.argentina_fit,
+      visual_potential: item.visual_potential,
+      production_complexity: item.production_complexity,
+      conservation_risk: item.conservation_risk,
+      cost_complexity: item.cost_complexity,
+      rationale: item.rationale,
+      image_url: item.image_url,
+      image_source_url: item.image_source_url,
+      status: 'proposed',
+    }));
+    const candidateResult = await supabase.from('product_discovery_candidates').insert(candidateRows).select('id,rank,name');
+    if (candidateResult.error) throw candidateResult.error;
+    const candidateByRank = new Map((candidateResult.data || []).map((item) => [Number(item.rank), item]));
+
+    const evidenceRows = research.evidence.map((item) => ({
+      business_id: business.id,
+      discovery_run_id: discoveryRunId,
+      candidate_id: candidateByRank.get(item.candidate_rank)?.id || null,
+      market_scope: item.market_scope,
+      country: item.country,
+      source_name: item.source_name,
+      source_url: item.source_url,
+      source_type: item.source_type,
+      evidence_type: item.evidence_type,
+      claim: item.claim,
+      metric_name: item.metric_name,
+      metric_value: item.metric_value,
+      metric_unit: item.metric_unit,
+      image_url: item.image_url,
+      observed_at: item.observed_at,
+      confidence: item.confidence,
+      metadata: item.metadata,
+    }));
+    const evidenceResult = await supabase.from('product_discovery_evidence').insert(evidenceRows).select('id');
+    if (evidenceResult.error) throw evidenceResult.error;
+
+    const previousResult = await supabase
+      .from('product_discovery_runs')
+      .update({ status: 'superseded', updated_at: new Date().toISOString() })
+      .eq('business_id', business.id)
+      .eq('status', 'ready')
+      .neq('id', discoveryRunId);
+    if (previousResult.error) throw previousResult.error;
+
+    return {
+      discovery_run_id: discoveryRunId,
+      status: 'ready',
+      candidate_ids: (candidateResult.data || []).sort((a, b) => Number(a.rank) - Number(b.rank)).map((item) => item.id),
+      evidence_count: evidenceRows.length,
+    };
+  } catch (error) {
+    if (discoveryRunId) {
+      await supabase.from('product_discovery_runs').delete().eq('business_id', business.id).eq('id', discoveryRunId);
+    }
+    throw error;
+  }
+}
+
 export async function executeActionRequest({ supabase, business, userId, request }) {
   const started = await supabase.from('agent_action_requests').update({
     status: 'executing',
@@ -266,7 +455,9 @@ export async function executeActionRequest({ supabase, business, userId, request
 
   try {
     let result;
-    if (request.action_type === 'create_operation_task') {
+    if (request.action_type === 'market_research') {
+      result = await executeMarketResearch({ supabase, business, request });
+    } else if (request.action_type === 'create_operation_task') {
       result = await executeCreateOperationTask({ supabase, business, userId, request });
     } else if (request.action_type === 'create_content_draft') {
       result = await executeContentDraft({ supabase, business, request });
