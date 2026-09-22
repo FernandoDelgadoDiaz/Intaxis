@@ -25,6 +25,8 @@ const developmentStatusLabel = (value) => ({ not_started: 'Sin iniciar', pending
 const developmentStageLabel = (value) => ({ awaiting_selection: 'Esperando selección', selected: 'Selección confirmada', queued: 'Preparando equipo', product_design: 'Producto y Experiencia', production_review: 'Producción y Abastecimiento', quality_review: 'Calidad y Cumplimiento', persisting: 'Integrando fichas', completed: 'Fichas listas', error: 'Revisar error' }[value] || value || 'Pendiente');
 const enrichmentStatusLabel = (value) => ({ not_started: 'Sin iniciar', pending: 'Preparando presentación', queued: 'En cola', running: 'Enriqueciendo oferta', completed: 'Presentación fundamentada lista', partial: 'Presentación parcial', failed: 'Requiere revisión' }[value] || 'Pendiente');
 const enrichmentStageLabel = (value) => ({ awaiting_technical_definition: 'Esperando ficha técnica', selected_offer_enrichment: 'Preparando enriquecimiento', queued: 'Preparando especialistas', market_visual_review: 'Mercado · referencias y presentación', human_instructions: 'Producto · instrucciones claras', quality_repair: 'Calidad · completando controles', aspirational_media: 'Creando imagen aspiracional', completed: 'Enriquecimiento listo', error: 'Revisar error' }[value] || value || 'Pendiente');
+const scopeLabel = (value) => ({ local: 'Local', national: 'Nacional', latam: 'Latinoamérica', international: 'Internacional' }[value] || value || 'Mercado sin definir');
+const confidenceLabel = (value) => ({ low: 'baja', medium: 'media', high: 'alta' }[value] || 'sin dato');
 
 function timeout(promise, label) {
   let timer;
@@ -170,15 +172,103 @@ function comparisonTable(candidates) {
   return `<div class="comparison-wrap"><table class="comparison-table"><thead><tr><th>#</th><th>${esc(singular)}</th><th>Aceptación</th><th>Tendencia</th><th>Afinidad local</th><th>Visual</th><th>Ejecución</th><th>Riesgo específico</th><th>Costo</th><th>Estado</th></tr></thead><tbody>${candidates.map((item) => `<tr><td>${esc(item.rank)}</td><td><strong>${esc(item.name)}</strong></td><td>${esc(band(item.acceptance_band))}${item.acceptance_score == null ? '' : ` · ${esc(Number(item.acceptance_score).toFixed(0))}/100`}</td><td>${esc(band(item.trend_strength))}</td><td>${esc(band(item.argentina_fit))}</td><td>${esc(band(item.visual_potential))}</td><td>${esc(band(item.production_complexity))}</td><td>${esc(band(item.conservation_risk))}</td><td>${esc(band(item.cost_complexity))}</td><td>${esc(statusLabel(item.status))}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function evidenceRole(item) {
+  const metadata = asObject(item?.metadata);
+  const explicit = String(metadata.evidence_role || '').trim();
+  if (['local_offer', 'format_reference', 'visual_reference', 'trend_signal', 'price_observation', 'competitor_context', 'market_context'].includes(explicit)) return explicit;
+  const type = String(item?.evidence_type || '').trim();
+  const claim = String(item?.claim || '').toLowerCase();
+  if (['packaging', 'presentation'].includes(type) || /\blata\b|envase transparente|formato lata|packaging|presentaci[oó]n/.test(claim)) return 'format_reference';
+  if (['trend', 'engagement', 'comment_signal'].includes(type) || /tendenc|señal editorial|viral/.test(claim)) return 'trend_signal';
+  if (type === 'price') return 'price_observation';
+  if (item?.market_scope === 'local') return 'local_offer';
+  if (type === 'competitor') return 'competitor_context';
+  return 'market_context';
+}
+
+function roleLabel(role) {
+  return ({
+    local_offer: 'Oferta local',
+    format_reference: 'Referencia de formato',
+    visual_reference: 'Referencia visual',
+    trend_signal: 'Señal de tendencia',
+    price_observation: 'Precio observado',
+    competitor_context: 'Contexto competitivo',
+    market_context: 'Contexto de mercado',
+  }[role] || 'Referencia de mercado');
+}
+
+function defaultLimitation(role) {
+  return ({
+    local_offer: 'No demuestra formato lata, volumen de ventas ni preferencia.',
+    format_reference: 'No demuestra aceptación en Río Gallegos ni volumen de ventas.',
+    visual_reference: 'No demuestra ventas ni preferencia del mercado.',
+    trend_signal: 'No demuestra demanda local ni ventas.',
+    price_observation: 'No define el precio objetivo ni el margen del negocio.',
+    competitor_context: 'No demuestra volumen vendido ni preferencia del cliente.',
+    market_context: 'Aporta contexto, pero no prueba por sí sola demanda o ventas.',
+  }[role] || 'No prueba por sí sola demanda o ventas.');
+}
+
+function sourceSpecificity(row) {
+  const metadata = asObject(row?.metadata);
+  const explicit = String(metadata.source_specificity || row?.source_specificity || '').trim();
+  if (['exact_product', 'business_page', 'category_page', 'article', 'homepage', 'source_page'].includes(explicit)) return explicit;
+  const url = String(row?.source_url || '').trim();
+  if (!/^https:\/\//i.test(url)) return 'source_page';
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+    if (host.includes('ubereats.com') && /\/store\//i.test(path)) return 'business_page';
+    if (path === '/') return 'homepage';
+    if (/\/(producto|product|products|item|pedir)\//i.test(path)) return 'exact_product';
+    if (/\/(category|categoria|menu)\//i.test(path)) return 'category_page';
+    if (/eater\.com$/.test(host)) return 'article';
+    return 'source_page';
+  } catch {
+    return 'source_page';
+  }
+}
+
+function sourceLabel(value) {
+  return ({
+    exact_product: 'Producto específico',
+    business_page: 'Página del comercio',
+    category_page: 'Página de categoría',
+    article: 'Artículo',
+    homepage: 'Sitio del comercio',
+    source_page: 'Página de fuente',
+  }[value] || 'Página de fuente');
+}
+
+function sourceLinkText(specificity, role) {
+  if (specificity === 'exact_product') return 'Abrir producto';
+  if (specificity === 'business_page') return 'Abrir página del comercio';
+  if (specificity === 'category_page') return 'Abrir categoría';
+  if (specificity === 'article' || role === 'trend_signal') return 'Abrir artículo';
+  if (specificity === 'homepage') return 'Abrir sitio del comercio';
+  return 'Abrir fuente';
+}
+
 function evidenceCard(item, candidateById) {
   const candidate = candidateById.get(item.candidate_id);
+  const metadata = asObject(item.metadata);
+  const role = evidenceRole(item);
+  const specificity = sourceSpecificity(item);
+  const proof = String(metadata.proves || item.claim || '').trim();
+  const limitation = String(metadata.does_not_prove || defaultLimitation(role)).trim();
   const image = item.image_url && /^https:\/\//i.test(item.image_url)
-    ? `<div class="evidence-thumb"><img loading="lazy" src="${esc(item.image_url)}" alt="${esc(candidate?.name || item.source_name || 'Referencia')}" referrerpolicy="no-referrer"></div>`
-    : '<div class="evidence-thumb"><span class="no-image">Referencia</span></div>';
+    ? `<div class="evidence-thumb"><img loading="lazy" src="${esc(item.image_url)}" alt="${esc(candidate?.name || item.source_name || roleLabel(role))}" referrerpolicy="no-referrer"></div>`
+    : `<div class="evidence-thumb"><span class="no-image">${esc(roleLabel(role))}</span></div>`;
   const link = item.source_url && /^https:\/\//i.test(item.source_url)
-    ? `<a class="evidence-link" href="${esc(item.source_url)}" target="_blank" rel="noopener noreferrer">Abrir fuente</a>`
+    ? `<a class="evidence-link" href="${esc(item.source_url)}" target="_blank" rel="noopener noreferrer">${esc(sourceLinkText(specificity, role))}</a>`
     : '';
-  return `<article class="evidence-card">${image}<div class="evidence-copy"><strong>${esc(candidate?.name || item.source_name || item.evidence_type)}</strong><p>${esc(item.claim)}</p>${link}<div class="evidence-meta"><span>${esc(item.market_scope)}${item.country ? ` · ${esc(item.country)}` : ''}</span><span>${esc(item.confidence)}</span></div></div></article>`;
+  return `<article class="evidence-card">${image}<div class="evidence-copy"><span class="visual-origin">${esc(roleLabel(role))}</span><strong>${esc(candidate?.name || item.source_name || item.evidence_type)}</strong><p><b>Fuente:</b> ${esc(item.source_name || 'Fuente web')}</p><p><b>Qué demuestra:</b> ${esc(proof)}</p><p><b>No demuestra:</b> ${esc(limitation)}</p>${link}<div class="evidence-meta"><span>${esc(scopeLabel(item.market_scope))}${item.country ? ` · ${esc(item.country)}` : ''} · ${esc(sourceLabel(specificity))}</span><span>Confianza ${esc(confidenceLabel(item.confidence))}</span></div></div></article>`;
 }
 
 function listItems(items, formatter = (item) => item) {
@@ -187,17 +277,27 @@ function listItems(items, formatter = (item) => item) {
   return `<ul class="discovery-detail-list">${rows.map((item) => `<li>${esc(formatter(item))}</li>`).join('')}</ul>`;
 }
 
+function referenceRole(row) {
+  const text = `${row?.observed_pattern || ''} ${row?.why_relevant || ''}`.toLowerCase();
+  if (/\blata\b|envase|recipiente|transparente|packaging|capas visibles/.test(text)) return 'format_reference';
+  if (row?.market_scope === 'local') return 'local_offer';
+  if (row?.image_url) return 'visual_reference';
+  return 'market_context';
+}
+
 function referenceCards(references) {
   const rows = Array.isArray(references) ? references : [];
   if (!rows.length) return '<p class="muted">Todavía no hay referencias visuales suficientemente trazables.</p>';
   return `<div class="market-reference-grid">${rows.map((row) => {
+    const role = referenceRole(row);
+    const specificity = sourceSpecificity(row);
     const image = row.image_url && /^https:\/\//i.test(row.image_url)
-      ? `<div class="market-reference-image"><img loading="lazy" src="${esc(row.image_url)}" alt="${esc(row.source_name || 'Referencia')}" referrerpolicy="no-referrer"></div>`
-      : '<div class="market-reference-image"><span class="no-image">Ver fuente</span></div>';
+      ? `<div class="market-reference-image"><img loading="lazy" src="${esc(row.image_url)}" alt="${esc(row.source_name || roleLabel(role))}" referrerpolicy="no-referrer"></div>`
+      : `<div class="market-reference-image"><span class="no-image">${esc(roleLabel(role))}</span></div>`;
     const link = row.source_url && /^https:\/\//i.test(row.source_url)
-      ? `<a href="${esc(row.source_url)}" target="_blank" rel="noopener noreferrer">Abrir referencia</a>`
+      ? `<a href="${esc(row.source_url)}" target="_blank" rel="noopener noreferrer">${esc(sourceLinkText(specificity, role))}</a>`
       : '';
-    return `<article class="market-reference-card">${image}<div><strong>${esc(row.source_name || 'Referencia de mercado')}</strong><span>${esc(row.market_scope || '')}</span><p>${esc(row.observed_pattern || row.why_relevant || '')}</p>${link}</div></article>`;
+    return `<article class="market-reference-card">${image}<div><strong>${esc(row.source_name || 'Referencia de mercado')}</strong><span>${esc(roleLabel(role))} · ${esc(scopeLabel(row.market_scope))} · ${esc(sourceLabel(specificity))}</span><p><b>Qué muestra:</b> ${esc(row.observed_pattern || 'Referencia contextual de mercado.')}</p>${row.why_relevant ? `<p><b>Por qué importa:</b> ${esc(row.why_relevant)}</p>` : ''}<p><b>No demuestra:</b> ${esc(defaultLimitation(role))}</p>${link}</div></article>`;
   }).join('')}</div>`;
 }
 
@@ -218,7 +318,7 @@ function visualStrategyBlock(item) {
       <div>${imageBlock(aspiration.status === 'ready' ? aspiration.url : null, 'Imagen aspiracional', 'aspirational-image', 'Imagen aspiracional pendiente')}${aspiration.disclaimer ? `<small class="aspirational-disclaimer">${esc(aspiration.disclaimer)}</small>` : ''}</div>
       <div class="visual-rationale"><p>${esc(strategy.strategy_summary || '')}</p>${listItems(strategy.visual_priorities, (value) => `Prioridad visual: ${value}`)}${listItems(strategy.differentiators, (value) => `Diferencial: ${value}`)}</div>
     </div>
-    <details class="competition-details"><summary>¿Querés ver cómo lo presenta la competencia?</summary><p class="muted">Estas referencias sirven para entender patrones del mercado. No son modelos para copiar.</p>${referenceCards(refs)}</details>
+    <details class="competition-details"><summary>¿Querés ver cómo lo presenta la competencia?</summary><p class="muted">Cada tarjeta aclara qué muestra la fuente y qué no puede concluirse de ella. No son modelos para copiar.</p>${referenceCards(refs)}</details>
     ${Array.isArray(strategy.avoid) && strategy.avoid.length ? `<details><summary>Qué conviene evitar</summary>${listItems(strategy.avoid)}</details>` : ''}
   </section>`;
 }
@@ -320,7 +420,7 @@ function viewHtml() {
     ${developmentPanel(run, blueprints)}
     ${enrichmentPanel(run, blueprints)}
     <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Cuadro comparativo</h4><p>Señales comerciales y operativas en una sola vista.</p></div></div>${comparisonTable(candidates)}</section>
-    <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Evidencia de mercado</h4><p>Cada referencia conserva fuente, mercado y nivel de confianza.</p></div></div>${evidence.length ? `<div class="evidence-grid">${evidence.slice(0, 16).map((item) => evidenceCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Todavía no hay evidencia cargada.</p></div>'}</section>
+    <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Evidencia de mercado</h4><p>Cada tarjeta aclara qué demuestra la fuente, qué no demuestra y si el enlace lleva al producto, al comercio o a un artículo.</p></div></div>${evidence.length ? `<div class="evidence-grid">${evidence.slice(0, 16).map((item) => evidenceCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Todavía no hay evidencia cargada.</p></div>'}</section>
     <section class="discovery-panel"><div class="discovery-panel-head"><div><h4>Ofertas en desarrollo</h4><p>Incluye presentación recomendada, referencias de competencia, imagen aspiracional, instrucciones simples y detalle técnico.</p></div></div>${blueprints.length ? `<div class="blueprint-list">${blueprints.map((item) => blueprintCard(item, candidateById)).join('')}</div>` : '<div class="discovery-empty"><p>Las fichas se generan automáticamente después de confirmar la selección.</p></div>'}</section>
   </div>`;
 }
