@@ -21,6 +21,7 @@ export async function requireBusiness(supabase) {
 
 export async function loadBusinessSnapshot(supabase, businessId) {
   const queries = [
+    supabase.from('business_profiles').select('*').eq('business_id', businessId).maybeSingle(),
     supabase.from('products').select('*').eq('business_id', businessId).order('name'),
     supabase.from('ingredients').select('*').eq('business_id', businessId).order('name'),
     supabase.from('recipes').select('*').eq('business_id', businessId).order('created_at'),
@@ -42,8 +43,8 @@ export async function loadBusinessSnapshot(supabase, businessId) {
       .limit(30),
   ];
 
-  const [products, ingredients, recipes, recipeItems, movements, capacity, decisions, hypotheses, autonomyPolicies, technologyRuns] = await Promise.all(queries);
-  for (const result of [products, ingredients, recipes, recipeItems, movements, capacity, decisions, hypotheses, autonomyPolicies, technologyRuns]) {
+  const [profile, products, ingredients, recipes, recipeItems, movements, capacity, decisions, hypotheses, autonomyPolicies, technologyRuns] = await Promise.all(queries);
+  for (const result of [profile, products, ingredients, recipes, recipeItems, movements, capacity, decisions, hypotheses, autonomyPolicies, technologyRuns]) {
     if (result.error) throw result.error;
   }
 
@@ -62,6 +63,7 @@ export async function loadBusinessSnapshot(supabase, businessId) {
   );
 
   return {
+    business_profile: profile.data || null,
     products: products.data || [],
     ingredients: (ingredients.data || []).map((item) => ({ ...item, current_stock: Number(stockByIngredient.get(item.id) || 0) })),
     recipes: recipes.data || [],
@@ -80,6 +82,7 @@ export async function loadBusinessSnapshot(supabase, businessId) {
 }
 
 export function contextForAgent(business, snapshot) {
+  const profile = snapshot.business_profile || null;
   return JSON.stringify({
     negocio: {
       id: business.id,
@@ -87,6 +90,16 @@ export function contextForAgent(business, snapshot) {
       ubicacion: `${business.city}, ${business.province}, ${business.country}`,
       etapa: business.stage,
       moneda: business.currency,
+      perfil: profile ? {
+        industria: profile.industry,
+        modelo_negocio: profile.business_model,
+        modo_oferta: profile.offer_mode,
+        mercado_objetivo: profile.target_market || {},
+        contexto_descubrimiento: profile.discovery_context || {},
+        contexto_operativo: profile.operational_context || {},
+        terminologia: profile.terminology || {},
+        configuracion_vertical: profile.vertical_config || {},
+      } : null,
     },
     productos: snapshot.products.map((item) => ({ id: item.id, nombre: item.name, estado: item.status, precio: item.sell_price, moneda: item.currency, porcion_gramos: item.portion_grams })),
     insumos: snapshot.ingredients.map((item) => ({ id: item.id, nombre: item.name, unidad: item.unit, costo_unitario: item.cost_per_unit, stock_actual: item.current_stock, punto_reposicion: item.reorder_point, observado_el: item.cost_observed_at, fuente_costo: item.cost_source })),
