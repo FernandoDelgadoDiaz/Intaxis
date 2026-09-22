@@ -1,19 +1,27 @@
 {
-  "name": "intaxis",
-  "version": "1.0.0",
+  "name": "agentic-pymes",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "vite build",
+    "start:local": "node src/server.js",
+    "check": "node --check src/app.js && node --check src/agents.js && node --check src/business-context.js && node --check src/server.js && node --check src/supabase.js && node --check src/routes/business.js && node --check src/routes/chat.js && node --check src/routes/export.js && node --check netlify/functions/api.js && node --check src/web.js"
+  },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@supabase/supabase-js": "2.95.0",
+    "exceljs": "4.4.0",
+    "express": "5.2.1",
+    "openai": "7.15.0",
+    "pptxgenjs": "4.0.1",
+    "serverless-http": "3.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.0.0",
-    "vite": "^4.4.0"
+    "netlify-cli": "23.5.0",
+    "vite": "7.1.7"
   },
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+  "engines": {
+    "node": ">=22 <25"
   }
 }
