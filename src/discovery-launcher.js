@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 const root = document.querySelector('#app');
 let clientPromise;
 let launching = false;
+let activeRunId = null;
+let lastProgress = null;
 
 async function client() {
   if (!clientPromise) {
@@ -82,13 +84,16 @@ function researchButton() {
 
 function improveButtonLabel() {
   const button = researchButton();
-  if (button && !launching) button.textContent = 'Iniciar investigación';
+  if (!button) return;
+  if (launching && activeRunId) button.textContent = 'Investigación en curso…';
+  else button.textContent = 'Iniciar investigación';
+  if (lastProgress) renderProgress();
 }
 
-function showStatus(text, tone = 'normal') {
+function renderProgress() {
   const button = researchButton();
   const host = button?.parentElement;
-  if (!host) return;
+  if (!host || !lastProgress) return;
   let status = host.querySelector('[data-research-launch-status]');
   if (!status) {
     status = document.createElement('p');
@@ -97,8 +102,20 @@ function showStatus(text, tone = 'normal') {
     status.style.marginTop = '10px';
     host.appendChild(status);
   }
-  status.textContent = text;
-  status.style.color = tone === 'error' ? '#b42318' : '';
+  status.textContent = lastProgress.text;
+  status.style.color = lastProgress.tone === 'error' ? '#b42318' : lastProgress.tone === 'success' ? '#067647' : '';
+}
+
+function showStatus(text, tone = 'normal') {
+  lastProgress = { text, tone };
+  renderProgress();
+}
+
+function setButtonState(label, disabled = true) {
+  const button = researchButton();
+  if (!button) return;
+  button.disabled = disabled;
+  button.textContent = label;
 }
 
 async function latestDiscoveryId() {
@@ -106,18 +123,129 @@ async function latestDiscoveryId() {
   return data?.discovery?.run?.id || null;
 }
 
-async function waitForResearch(previousId) {
+function isDiscoveryMission(run) {
+  const mission = String(run?.mission || '');
+  return /oportunidades de mercado|market_research|Descubrimiento/i.test(mission);
+}
+
+async function activeResearchRun() {
+  const data = await api('/api/chat/runs');
+  return (data?.runs || []).find((run) => ['queued', 'running'].includes(run.status) && isDiscoveryMission(run)) || null;
+}
+
+function runningStatus(run) {
+  if (run.status === 'queued') return 'En cola · esperando que arranque el motor de ejecución…';
+  if (run.status === 'running' && !run.delegation_plan) return 'Director analizando la misión y decidiendo qué especialistas activar…';
+  if (run.status === 'running' && Number(run.specialist_count || 0) > 0) {
+    const count = Number(run.specialist_count || 0);
+    return `Director trabajando · ${count} especialista${count === 1 ? '' : 's'} activado${count === 1 ? '' : 's'}…`;
+  }
+  if (run.status === 'running') return 'Director integrando evidencia y preparando la decisión…';
+  return '';
+}
+
+async function startBackground(runId) {
+  await api('/.netlify/functions/agent-run-background', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId }),
+  });
+}
+
+async function waitForResearch(previousId, runId) {
   const started = Date.now();
-  while (Date.now() - started < 5 * 60 * 1000) {
-    await new Promise((resolve) => setTimeout(resolve, 8000));
-    const currentId = await latestDiscoveryId().catch(() => null);
+  let completedWithoutDiscoveryAt = null;
+
+  while (Date.now() - started < 15 * 60 * 1000) {
+    await new Promise((resolve) => setTimeout(resolve, document.hidden ? 8000 : 3000));
+
+    const [detail, currentId] = await Promise.all([
+      api(`/api/chat/runs/${encodeURIComponent(runId)}`).catch(() => null),
+      latestDiscoveryId().catch(() => null),
+    ]);
+
     if (currentId && currentId !== previousId) {
-      showStatus('Investigación terminada. Cargando resultados…');
+      showStatus('Investigación terminada ✓ Cargando resultados…', 'success');
+      setButtonState('Investigación terminada ✓', true);
+      activeRunId = null;
+      launching = false;
       document.querySelector('[data-discovery-nav]')?.click();
       return;
     }
+
+    const run = detail?.run;
+    if (!run) continue;
+
+    if (run.status === 'failed') {
+      showStatus(`La investigación falló: ${run.error_message || 'sin detalle del error.'}`, 'error');
+      setButtonState('Reintentar investigación', false);
+      activeRunId = null;
+      launching = false;
+      return;
+    }
+
+    if (run.status === 'completed') {
+      const failedAction = (detail.actions || []).find((item) => item.action_type === 'market_research' && item.status === 'failed');
+      if (failedAction) {
+        showStatus(`El análisis terminó, pero no pudo guardarse el estudio: ${failedAction.error_message || failedAction.policy_reason || 'faltó evidencia suficiente.'}`, 'error');
+        setButtonState('Reintentar investigación', false);
+        activeRunId = null;
+        launching = false;
+        return;
+      }
+
+      if (!completedWithoutDiscoveryAt) completedWithoutDiscoveryAt = Date.now();
+      showStatus('Director terminó el análisis · verificando que el estudio haya quedado guardado…');
+      if (Date.now() - completedWithoutDiscoveryAt > 20000) {
+        showStatus('La misión terminó sin generar un nuevo estudio de Descubrimiento. Revisá la respuesta del Director antes de reintentar.', 'error');
+        setButtonState('Reintentar investigación', false);
+        activeRunId = null;
+        launching = false;
+        return;
+      }
+      continue;
+    }
+
+    showStatus(runningStatus(run));
+    if (run.status === 'queued' && Date.now() - started > 30000) {
+      showStatus('La misión sigue en cola. El motor de background todavía no confirmó el arranque.', 'error');
+    }
   }
-  showStatus('La investigación sigue en segundo plano. Podés salir y volver a Descubrir más tarde; el resultado queda guardado.');
+
+  showStatus('La investigación superó el tiempo de seguimiento en pantalla. Su estado real queda guardado y puede revisarse al volver.', 'error');
+  setButtonState('Revisar / reintentar', false);
+  activeRunId = null;
+  launching = false;
+}
+
+async function followRun(run, previousId) {
+  launching = true;
+  activeRunId = run.id;
+  setButtonState('Investigación en curso…', true);
+  showStatus(runningStatus(run));
+
+  if (run.status === 'queued') {
+    showStatus('Misión encontrada en cola · iniciando el motor de ejecución…');
+    await startBackground(run.id);
+    showStatus('Motor iniciado · esperando el plan del Director…');
+  }
+
+  waitForResearch(previousId, run.id).catch((error) => {
+    showStatus(error.message || 'No se pudo seguir el estado de la investigación.', 'error');
+    setButtonState('Reintentar investigación', false);
+    activeRunId = null;
+    launching = false;
+  });
+}
+
+async function recoverExistingResearch() {
+  if (launching) return;
+  const [run, previousId] = await Promise.all([
+    activeResearchRun().catch(() => null),
+    latestDiscoveryId().catch(() => null),
+  ]);
+  if (!run) return;
+  await followRun(run, previousId);
 }
 
 async function startResearch(button) {
@@ -129,23 +257,41 @@ async function startResearch(button) {
   showStatus('Preparando el contexto real de Mi Negocio…');
 
   try {
-    const [context, previousId] = await Promise.all([
-      api('/api/mi-negocio'),
+    const [existing, previousId] = await Promise.all([
+      activeResearchRun().catch(() => null),
       latestDiscoveryId().catch(() => null),
     ]);
+
+    if (existing) {
+      launching = false;
+      await followRun(existing, previousId);
+      return;
+    }
+
+    const context = await api('/api/mi-negocio');
     const mission = buildMission(context);
-    showStatus('Director y especialistas trabajando. Podés dejar esta pantalla; la ejecución continúa en segundo plano.');
-    await api('/api/chat', {
+    const queued = await api('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       body: mission,
     });
-    button.textContent = 'Investigación iniciada ✓';
-    waitForResearch(previousId).catch(() => {});
+
+    activeRunId = queued.runId;
+    setButtonState('Investigación en curso…', true);
+    showStatus('En cola · iniciando motor de ejecución…');
+    await startBackground(queued.runId);
+    showStatus('Motor iniciado · esperando el plan del Director…');
+    waitForResearch(previousId, queued.runId).catch((error) => {
+      showStatus(error.message || 'No se pudo seguir el estado de la investigación.', 'error');
+      setButtonState('Reintentar investigación', false);
+      activeRunId = null;
+      launching = false;
+    });
   } catch (error) {
     showStatus(error.message, 'error');
     button.disabled = false;
     button.textContent = original || 'Iniciar investigación';
+    activeRunId = null;
     launching = false;
   }
 }
@@ -154,10 +300,14 @@ document.addEventListener('click', (event) => {
   const button = event.target.closest?.('#prepare-discovery-mission');
   if (!button) return;
   event.preventDefault();
+  event.stopPropagation();
   event.stopImmediatePropagation();
   startResearch(button);
 }, true);
 
 const observer = new MutationObserver(() => queueMicrotask(improveButtonLabel));
 observer.observe(root, { childList: true });
-setTimeout(improveButtonLabel, 250);
+setTimeout(() => {
+  improveButtonLabel();
+  recoverExistingResearch().catch(() => {});
+}, 350);

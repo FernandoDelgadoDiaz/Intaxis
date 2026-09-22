@@ -7,7 +7,7 @@ import { autonomyRouter } from './routes/autonomy.js';
 import { discoveryRouter } from './routes/discovery.js';
 
 export const app = express();
-export const BUILD_VERSION = '0.9.1-discovery-one-tap';
+export const BUILD_VERSION = '0.9.2-discovery-background-progress';
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.text({ type: 'text/plain', limit: '1mb' }));
