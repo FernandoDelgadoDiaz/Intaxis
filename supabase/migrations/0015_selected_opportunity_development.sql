@@ -5,13 +5,15 @@
 alter table public.product_discovery_runs
   add column if not exists development_status text not null default 'not_started'
     check (development_status in ('not_started','pending','queued','running','completed','partial','failed')),
+  add column if not exists development_stage text not null default 'awaiting_selection',
   add column if not exists development_agent_run_id uuid references public.agent_runs(id) on delete set null,
   add column if not exists development_started_at timestamptz,
   add column if not exists development_completed_at timestamptz,
   add column if not exists development_error_message text;
 
 update public.product_discovery_runs
-set development_status = 'pending'
+set development_status = 'pending',
+    development_stage = 'selected'
 where status = 'approved'
   and development_status = 'not_started';
 
@@ -36,6 +38,8 @@ create index if not exists product_discovery_blueprints_source_run_idx
 
 comment on column public.product_discovery_runs.development_status is
 'Estado del flujo interno que transforma oportunidades seleccionadas en definiciones operativas comparables.';
+comment on column public.product_discovery_runs.development_stage is
+'Etapa observable del flujo: selected, product_design, production_review, quality_review, persisting, completed o error.';
 comment on column public.product_discovery_blueprints.offer_definition is
 'Definición genérica de la oferta. El vertical puede especializarla como producto, servicio, proyecto u otra unidad comercial.';
 comment on column public.product_discovery_blueprints.resources is
