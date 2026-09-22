@@ -212,7 +212,11 @@ async function sendMission() {
   messages.scrollTop = messages.scrollHeight;
 
   try {
-    const data = await api('/api/chat', { method: 'POST', body: JSON.stringify({ mensaje: text }) });
+    const data = await api('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: text,
+    });
     pending.className = 'message assistant';
     pending.textContent = data.respuesta;
     status.textContent = 'Disponible';
