@@ -1,24 +1,23 @@
-process.env.OPENAI_API_KEY ||= 'test-key-for-static-check';
+import fs from 'node:fs';
+import { estimateModelCostUsd, PRICING_VERSION } from '../src/ai-cost.js';
 
-const { MODEL_BY_ROLE } = await import('../src/team.js');
-const { estimateModelCostUsd, PRICING_VERSION } = await import('../src/ai-cost.js');
+const teamSource = fs.readFileSync(new URL('../src/team.js', import.meta.url), 'utf8');
+const expectedMappings = [
+  ["director", "gpt-6-astra"],
+  ["market_growth", "gpt-5.6-terra"],
+  ["product_experience", "gpt-5.6-terra"],
+  ["finance_profitability", "gpt-5.6-terra"],
+  ["sales_customers", "gpt-5.6-luna"],
+  ["production_supply", "gpt-5.6-luna"],
+  ["quality_compliance", "gpt-5.6-terra"],
+  ["information_decisions", "gpt-5.6-terra"],
+];
 
-const expected = {
-  director: 'gpt-6-astra',
-  market_growth: 'gpt-5.6-terra',
-  product_experience: 'gpt-5.6-terra',
-  finance_profitability: 'gpt-5.6-terra',
-  sales_customers: 'gpt-5.6-luna',
-  production_supply: 'gpt-5.6-luna',
-  quality_compliance: 'gpt-5.6-terra',
-  information_decisions: 'gpt-5.6-terra',
-};
-
-for (const [role, model] of Object.entries(expected)) {
-  if (MODEL_BY_ROLE[role] !== model) {
-    throw new Error(`Routing incorrecto para ${role}: ${MODEL_BY_ROLE[role]} != ${model}`);
-  }
+for (const [role, model] of expectedMappings) {
+  const pattern = new RegExp(`${role}:\\s*['\"]${model.replaceAll('.', '\\.') }['\"]`);
+  if (!pattern.test(teamSource)) throw new Error(`Routing faltante o incorrecto: ${role} → ${model}`);
 }
+if (!teamSource.includes("const SPEC_VERSION = '2'")) throw new Error('SPEC_VERSION debe ser 2 para materializar el cambio en agentes persistentes.');
 
 const usage = {
   input_tokens: 1_000_000,
