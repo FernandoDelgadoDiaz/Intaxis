@@ -7,7 +7,7 @@ import { autonomyRouter } from './routes/autonomy.js';
 import { discoveryRouter } from './routes/discovery.js';
 
 export const app = express();
-export const BUILD_VERSION = '0.8.1-market-research-executor';
+export const BUILD_VERSION = '0.8.2-ui-recovery';
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.text({ type: 'text/plain', limit: '1mb' }));
