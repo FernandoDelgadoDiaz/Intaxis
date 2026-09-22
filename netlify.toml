@@ -2,8 +2,12 @@
   command = "npm run build"
   publish = "dist"
 
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["express", "serverless-http", "exceljs", "pptxgenjs", "openai", "@supabase/supabase-js"]
 
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
