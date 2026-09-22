@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const root = document.querySelector('#app');
 let clientPromise;
 let launching = false;
+let activeRunId = null;
 
 async function client() {
   if (!clientPromise) {
@@ -98,7 +99,14 @@ function showStatus(text, tone = 'normal') {
     host.appendChild(status);
   }
   status.textContent = text;
-  status.style.color = tone === 'error' ? '#b42318' : '';
+  status.style.color = tone === 'error' ? '#b42318' : tone === 'success' ? '#067647' : '';
+}
+
+function setButtonState(label, disabled = true) {
+  const button = researchButton();
+  if (!button) return;
+  button.disabled = disabled;
+  button.textContent = label;
 }
 
 async function latestDiscoveryId() {
@@ -106,18 +114,81 @@ async function latestDiscoveryId() {
   return data?.discovery?.run?.id || null;
 }
 
-async function waitForResearch(previousId) {
+function runningStatus(run) {
+  if (run.status === 'queued') return 'En cola · esperando que arranque el motor de ejecución…';
+  if (run.status === 'running' && !run.delegation_plan) return 'Director analizando la misión y decidiendo qué especialistas activar…';
+  if (run.status === 'running' && Number(run.specialist_count || 0) > 0) {
+    const count = Number(run.specialist_count || 0);
+    return `Director trabajando · ${count} especialista${count === 1 ? '' : 's'} activado${count === 1 ? '' : 's'}…`;
+  }
+  if (run.status === 'running') return 'Director integrando evidencia y preparando la decisión…';
+  return '';
+}
+
+async function waitForResearch(previousId, runId) {
   const started = Date.now();
-  while (Date.now() - started < 5 * 60 * 1000) {
-    await new Promise((resolve) => setTimeout(resolve, 8000));
-    const currentId = await latestDiscoveryId().catch(() => null);
+  let completedWithoutDiscoveryAt = null;
+
+  while (Date.now() - started < 15 * 60 * 1000) {
+    await new Promise((resolve) => setTimeout(resolve, document.hidden ? 8000 : 3000));
+
+    const [detail, currentId] = await Promise.all([
+      api(`/api/chat/runs/${encodeURIComponent(runId)}`).catch(() => null),
+      latestDiscoveryId().catch(() => null),
+    ]);
+
     if (currentId && currentId !== previousId) {
-      showStatus('Investigación terminada. Cargando resultados…');
+      showStatus('Investigación terminada ✓ Cargando resultados…', 'success');
+      setButtonState('Investigación terminada ✓', true);
+      activeRunId = null;
+      launching = false;
       document.querySelector('[data-discovery-nav]')?.click();
       return;
     }
+
+    const run = detail?.run;
+    if (!run) continue;
+
+    if (run.status === 'failed') {
+      showStatus(`La investigación falló: ${run.error_message || 'sin detalle del error.'}`, 'error');
+      setButtonState('Reintentar investigación', false);
+      activeRunId = null;
+      launching = false;
+      return;
+    }
+
+    if (run.status === 'completed') {
+      const failedAction = (detail.actions || []).find((item) => item.action_type === 'market_research' && item.status === 'failed');
+      if (failedAction) {
+        showStatus(`El análisis terminó, pero no pudo guardarse el estudio: ${failedAction.error_message || failedAction.policy_reason || 'faltó evidencia suficiente.'}`, 'error');
+        setButtonState('Reintentar investigación', false);
+        activeRunId = null;
+        launching = false;
+        return;
+      }
+
+      if (!completedWithoutDiscoveryAt) completedWithoutDiscoveryAt = Date.now();
+      showStatus('Director terminó el análisis · verificando que el estudio haya quedado guardado…');
+      if (Date.now() - completedWithoutDiscoveryAt > 20000) {
+        showStatus('La misión terminó sin generar un nuevo estudio de Descubrimiento. Revisá la respuesta del Director antes de reintentar.', 'error');
+        setButtonState('Reintentar investigación', false);
+        activeRunId = null;
+        launching = false;
+        return;
+      }
+      continue;
+    }
+
+    showStatus(runningStatus(run));
+    if (run.status === 'queued' && Date.now() - started > 30000) {
+      showStatus('La misión sigue en cola. Si permanece así más de un minuto, el motor de background no arrancó.', 'error');
+    }
   }
-  showStatus('La investigación sigue en segundo plano. Podés salir y volver a Descubrir más tarde; el resultado queda guardado.');
+
+  showStatus('La investigación superó el tiempo de seguimiento en pantalla. Su estado real queda guardado y puede revisarse al volver.', 'error');
+  setButtonState('Revisar / reintentar', false);
+  activeRunId = null;
+  launching = false;
 }
 
 async function startResearch(button) {
@@ -134,18 +205,35 @@ async function startResearch(button) {
       latestDiscoveryId().catch(() => null),
     ]);
     const mission = buildMission(context);
-    showStatus('Director y especialistas trabajando. Podés dejar esta pantalla; la ejecución continúa en segundo plano.');
-    await api('/api/chat', {
+
+    const queued = await api('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       body: mission,
     });
-    button.textContent = 'Investigación iniciada ✓';
-    waitForResearch(previousId).catch(() => {});
+
+    activeRunId = queued.runId;
+    setButtonState('Investigación en curso…', true);
+    showStatus('En cola · iniciando motor de ejecución…');
+
+    await api('/.netlify/functions/agent-run-background', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: queued.runId }),
+    });
+
+    showStatus('Motor iniciado · esperando el plan del Director…');
+    waitForResearch(previousId, queued.runId).catch((error) => {
+      showStatus(error.message || 'No se pudo seguir el estado de la investigación.', 'error');
+      setButtonState('Reintentar investigación', false);
+      activeRunId = null;
+      launching = false;
+    });
   } catch (error) {
     showStatus(error.message, 'error');
     button.disabled = false;
     button.textContent = original || 'Iniciar investigación';
+    activeRunId = null;
     launching = false;
   }
 }
@@ -158,6 +246,9 @@ document.addEventListener('click', (event) => {
   startResearch(button);
 }, true);
 
-const observer = new MutationObserver(() => queueMicrotask(improveButtonLabel));
+const observer = new MutationObserver(() => queueMicrotask(() => {
+  improveButtonLabel();
+  if (launching && activeRunId) setButtonState('Investigación en curso…', true);
+}));
 observer.observe(root, { childList: true });
 setTimeout(improveButtonLabel, 250);
