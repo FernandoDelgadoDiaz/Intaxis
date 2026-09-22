@@ -1,10 +1,22 @@
 import OpenAI from 'openai';
 import { ensureAgentTeam, specialistDefinition, specialistKeys } from './team.js';
+import { normalizeDirectorAction } from './autonomy.js';
 
 if (!process.env.OPENAI_API_KEY) throw new Error('Falta OPENAI_API_KEY.');
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const VALID_SPECIALIST_KEYS = new Set(specialistKeys());
+const ACTION_MARKER = 'AGENTIC_ACTIONS_JSON:';
+const ACTION_TYPES = [
+  'market_research',
+  'create_content_draft',
+  'create_operation_task',
+  'reply_customer_routine',
+  'create_order',
+  'create_payment_link',
+  'publish_content',
+  'paid_ad_spend',
+];
 
 function sessionFrom(event) {
   return event?.session_id || event?.session?.id || event?.turn?.session_id || event?.data?.session_id || null;
@@ -111,6 +123,25 @@ function extractJson(text) {
   }
 }
 
+export function extractDirectorActions(text) {
+  const raw = String(text || '');
+  const markerIndex = raw.lastIndexOf(ACTION_MARKER);
+  if (markerIndex < 0) return { response: raw.trim(), actions: [] };
+
+  const response = raw.slice(0, markerIndex).trim();
+  const encoded = raw.slice(markerIndex + ACTION_MARKER.length).trim();
+  try {
+    const parsed = extractJson(encoded);
+    const actions = (Array.isArray(parsed?.actions) ? parsed.actions : [])
+      .map(normalizeDirectorAction)
+      .filter(Boolean)
+      .slice(0, 5);
+    return { response, actions };
+  } catch {
+    return { response, actions: [] };
+  }
+}
+
 function fallbackPlan(mission) {
   const text = String(mission || '').toLowerCase();
   const planned = [];
@@ -156,7 +187,7 @@ function specialistPrompt({ mission, businessContext, task, specialistName }) {
 
 function synthesisPrompt({ mission, businessContext, plan, specialistResults }) {
   const evidence = specialistResults.map((item) => ({ key: item.key, name: item.name, task: item.task, result: item.result }));
-  return `MODO SÍNTESIS\n\nESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN DEL PROPIETARIO\n${mission}\n\nPLAN DE DELEGACIÓN REAL\n${JSON.stringify(plan, null, 2)}\n\nRESULTADOS REALES DE LOS ESPECIALISTAS ACTIVADOS\n${JSON.stringify(evidence, null, 2)}\n\nIntegrá estos aportes. Si hay contradicciones, hacelas explícitas. En Especialistas activados mencioná exclusivamente los especialistas listados arriba.`;
+  return `MODO SÍNTESIS\n\nESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN DEL PROPIETARIO\n${mission}\n\nPLAN DE DELEGACIÓN REAL\n${JSON.stringify(plan, null, 2)}\n\nRESULTADOS REALES DE LOS ESPECIALISTAS ACTIVADOS\n${JSON.stringify(evidence, null, 2)}\n\nIntegrá estos aportes. Si hay contradicciones, hacelas explícitas. En Especialistas activados mencioná exclusivamente los especialistas listados arriba.\n\nREGLA DE EJECUCIÓN AGENTIC\nAdemás del texto para el propietario, proponé únicamente acciones concretas que el sistema pueda evaluar mediante políticas. No inventes IDs, disponibilidad, montos ni fechas. Si faltan datos para ejecutar con seguridad, no propongas la acción ejecutable: explicá el faltante en el texto. Tipos permitidos: ${ACTION_TYPES.join(', ')}. Para create_operation_task el payload debe incluir product_id, quantity, due_at, title y opcionalmente priority, unit e instructions. Para create_content_draft debe incluir provider, content_type, concept, hook, body, call_to_action e hypothesis cuando estén disponibles.\nAl FINAL de tu respuesta, en una sola línea, agregá exactamente:\n${ACTION_MARKER}{"actions":[{"type":"create_operation_task","title":"...","rationale":"...","confidence":0.0,"risk_level":"low","estimated_amount_ars":null,"payload":{}}]}\nSi no corresponde ninguna acción, usá ${ACTION_MARKER}{"actions":[]}. No escribas nada después de esa línea.`;
 }
 
 export async function planDirectorMission({ providerSessionId, mission, businessContext }) {
@@ -207,12 +238,14 @@ export async function synthesizeDirectorMission({ providerSessionId, mission, bu
     sessionId: providerSessionId,
     input: synthesisPrompt({ mission, businessContext, plan, specialistResults }),
   });
+  const parsed = extractDirectorActions(result.response);
   return {
     sessionId: result.sessionId,
     turnId: result.turnId,
     usage: result.usage,
     model: team.director.model,
-    response: result.response,
+    response: parsed.response,
+    actions: parsed.actions,
   };
 }
 

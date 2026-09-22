@@ -14,6 +14,7 @@ import {
   PRICING_VERSION,
   sumKnownCosts,
 } from '../ai-cost.js';
+import { registerDirectorActions } from '../autonomy.js';
 
 export const chatRouter = Router();
 const clean = (value) => String(value || '').trim();
@@ -122,7 +123,7 @@ chatRouter.post('/chat', async (req, res) => {
   if (!mission) return res.status(400).json({ error: 'Escribí una misión para el Director.' });
   if (mission.length > 6000) return res.status(400).json({ error: 'La misión supera los 6000 caracteres.' });
 
-  const { supabase } = await authenticatedUser(req);
+  const { supabase, user } = await authenticatedUser(req);
   const business = await requireBusiness(supabase);
   const { data: run, error: runError } = await supabase
     .from('agent_runs')
@@ -327,6 +328,14 @@ chatRouter.post('/chat', async (req, res) => {
       usage: synthesis.usage,
     });
 
+    const actionResults = await registerDirectorActions({
+      supabase,
+      business,
+      userId: user.id,
+      agentRunId: run.id,
+      actions: synthesis.actions,
+    });
+
     const knownCosts = [
       planningUsage,
       synthesisUsage,
@@ -359,6 +368,17 @@ chatRouter.post('/chat', async (req, res) => {
         pricingVersion: PRICING_VERSION,
         note: 'Costo estimado de tokens del modelo; no incluye herramientas, cache writes, sandbox, terceros, impuestos ni recargos regionales.',
       },
+      actions: actionResults.map((item) => ({
+        id: item.id,
+        type: item.action_type,
+        title: item.title,
+        decision: item.policy_decision,
+        status: item.status,
+        requiresHuman: item.requires_human,
+        reason: item.policy_reason,
+        executionResult: item.execution_result || null,
+        error: item.error_message || null,
+      })),
       specialists: specialistResults.map((item) => ({
         key: item.key,
         name: item.name,
