@@ -17,7 +17,9 @@ for (const [role, model] of expectedMappings) {
   const pattern = new RegExp(`${role}:\\s*['\"]${model.replaceAll('.', '\\.') }['\"]`);
   if (!pattern.test(teamSource)) throw new Error(`Routing faltante o incorrecto: ${role} → ${model}`);
 }
-if (!teamSource.includes("const SPEC_VERSION = '2'")) throw new Error('SPEC_VERSION debe ser 2 para materializar el cambio en agentes persistentes.');
+if (!teamSource.includes("const SPEC_VERSION = '3'")) throw new Error('SPEC_VERSION debe ser 3 para materializar las instrucciones de Descubrimiento en agentes persistentes.');
+if (!teamSource.includes("type: 'web_search'")) throw new Error('Mercado debe conservar búsqueda web live para investigación actual.');
+if (!teamSource.includes('URL HTTPS completa y real')) throw new Error('Mercado debe conservar fuentes URL trazables para Descubrimiento.');
 
 const usage = {
   input_tokens: 1_000_000,
