@@ -7,7 +7,7 @@
     "dev": "netlify dev",
     "build": "vite build",
     "start:local": "node src/server.js",
-    "check": "node --check src/app.js && node --check src/agents.js && node --check src/server.js && node --check netlify/functions/api.js && node --check src/web.js"
+    "check": "node --check src/app.js && node --check src/agents.js && node --check src/business-context.js && node --check src/server.js && node --check src/supabase.js && node --check src/routes/business.js && node --check src/routes/chat.js && node --check src/routes/export.js && node --check netlify/functions/api.js && node --check src/web.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.95.0",
