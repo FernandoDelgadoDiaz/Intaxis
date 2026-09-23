@@ -17,7 +17,7 @@ for (const [role, model] of expectedMappings) {
   const pattern = new RegExp(`${role}:\\s*['\"]${model.replaceAll('.', '\\.') }['\"]`);
   if (!pattern.test(teamSource)) throw new Error(`Routing faltante o incorrecto: ${role} → ${model}`);
 }
-if (!teamSource.includes("const SPEC_VERSION = '4'")) throw new Error('SPEC_VERSION debe ser 4 para materializar la política reliability-first en agentes persistentes.');
+if (!teamSource.includes("const SPEC_VERSION = '5'")) throw new Error('SPEC_VERSION debe ser 5 para materializar la política reliability-first y el filtro agentic en agentes persistentes.');
 if (!teamSource.includes("model_policy: 'reliability-first-v1'")) throw new Error('Falta metadata reliability-first-v1.');
 if (!teamSource.includes("type: 'web_search'")) throw new Error('Mercado debe conservar búsqueda web live para investigación actual.');
 if (!teamSource.includes('URL HTTPS completa y real')) throw new Error('Mercado debe conservar fuentes URL trazables para Descubrimiento.');
