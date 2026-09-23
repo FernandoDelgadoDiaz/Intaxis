@@ -211,7 +211,7 @@ export function contextForAgent(business, snapshot) {
       actualizado_el: item.updated_at,
       regla: 'Esta formulación es una base de desarrollo/prueba. Puede escalarse matemáticamente para un piloto, pero no debe presentarse como receta comercial aprobada ni como vida útil validada.',
     })),
-    insumos: snapshot.ingredients.map((item) => ({ id: item.id, nombre: item.name, unidad: item.unit, costo_unitario: item.cost_per_unit, stock_actual: item.current_stock, punto_reposicion: item.reorder_point, observado_el: item.cost_observed_at, fuente_costo: item.cost_source })),
+    insumos: snapshot.ingredients.map((item) => ({ id: item.id, nombre: item.name, unidad: item.unit, costo_unitario: item.cost_per_unit, moneda: item.currency, stock_actual: item.current_stock, punto_reposicion: item.reorder_point, observado_el: item.cost_observed_at, fuente_costo: item.cost_source })),
     recetas: snapshot.recipes,
     componentes_receta: snapshot.recipe_items,
     capacidad: snapshot.capacity,
