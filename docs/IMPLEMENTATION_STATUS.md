@@ -1,113 +1,546 @@
-# Estado de implementación · 21/09/2026
+# Agentic Pymes · Estado real de implementación
 
-## Decisión de producto
+**Fecha de corte:** 22/09/2026  
+**Build en `main`:** `0.13.0-agentic-fact-ingestion`  
+**Repositorio:** `FernandoDelgadoDiaz/Intaxis`  
+**Producción:** `https://intaxis.netlify.app`  
+**Supabase:** `fubpzfpystsxmgpqjjol`
 
-- El producto se llama **Agentic Pymes**.
-- **Postres Experiencia** queda como primer negocio piloto real.
-- El objetivo es construir un sistema operativo empresarial agentic reutilizable por otras PyMEs.
-- El usuario no gestiona una colección de agentes: el Director coordina especialistas detrás de la interfaz.
+Este documento es la **verdad operativa** de qué existe realmente, qué fue verificado, qué está bloqueado y qué todavía no debe darse por terminado. `PRODUCT_VISION.md` define hacia dónde vamos; este archivo define dónde estamos.
 
-## Construido en el núcleo 0.2
+---
 
-- Estructura de aplicación Agentic Pymes.
-- Adaptador Express → Netlify Functions.
-- Configuración Netlify (`netlify.toml`).
-- Autenticación por Magic Link de Supabase.
-- RLS en todas las tablas públicas del núcleo.
-- `Mi Negocio` con productos, insumos, recetas, movimientos de stock, capacidad, decisiones e hipótesis.
-- Persistencia de conversaciones del Director mediante `agent_threads` y `agent_runs`.
-- Concurrencia protegida: un solo run del Director activo por negocio.
-- Contexto estructurado de `Mi Negocio` inyectado antes de cada misión.
-- Interfaz inicial con dos superficies: Director y Mi Negocio.
-- Alta de productos e insumos desde la interfaz.
-- Exportación básica de informe a Excel y PowerPoint.
+## 1. Estado ejecutivo
 
-## Construido en el núcleo 0.3 · equipo agentic real
+Agentic Pymes ya no es sólo una colección de prompts o pantallas. Hoy existen piezas reales del sistema operativo agentic:
 
-- Ocho configuraciones persistentes de OpenAI Agents: **1 Director + 7 especialistas**.
-- Los siete especialistas dejaron de ser sólo roles descriptos dentro del prompt del Director.
-- Cada especialista posee nombre, misión, límites, criterio de activación, herramientas permitidas, salida JSON estructurada y `agent_id` persistente cuando el runtime lo inicializa.
-- Especialistas implementados:
-  1. Mercado, Audiencia y Crecimiento.
-  2. Producto y Experiencia.
-  3. Caja y Rentabilidad.
-  4. Ventas y Clientes.
-  5. Producción y Abastecimiento.
-  6. Calidad y Cumplimiento.
-  7. Información y Decisiones.
-- El Director trabaja en dos etapas: **PLAN** y **SÍNTESIS**.
-- Máximo de tres especialistas ejecutándose en paralelo.
-- `specialist_runs` registra cada participación con agente, sesión, tarea, resultado, estado, error y timestamps.
-- `agent_runs` conserva el plan de delegación y cantidad de especialistas activados.
-- Un especialista que falla queda registrado como fallido; no se simula su aporte.
-- Endpoint autenticado `/api/team` para inspeccionar la composición lógica del equipo sin exponer IDs internos del proveedor.
-- Definición canónica detallada en `docs/AGENT_TEAM.md`.
+- `Mi Negocio` como memoria estructurada;
+- 1 Director + 7 especialistas persistentes;
+- planificación y síntesis multiagente con trazabilidad;
+- modelo reliability-first por función;
+- Descubrimiento con evidencia externa y selección;
+- desarrollo técnico automático de ofertas seleccionadas;
+- enriquecimiento visual/humano con reanudación por etapas;
+- promoción inmediata de oportunidades a ofertas en desarrollo;
+- capa de eventos (`business_events`);
+- ledger de acciones (`agent_action_requests`);
+- políticas determinísticas de autonomía (`autonomy_policies`);
+- primitivas de pedidos, pagos, canales, marketing, capacidad y tareas;
+- persistencia de hechos reales aportados por el propietario;
+- materialización de blueprints como recetas `draft`;
+- filtro permanente de visión agentic incorporado al Director.
 
-## Supabase · estado real
+Lo que **todavía no está demostrado de punta a punta** es que todas estas piezas operen juntas de forma natural sobre un negocio físico real sin trabajo manual innecesario del propietario.
 
-Proyecto reutilizado exclusivamente para Agentic Pymes:
+La prioridad actual es cerrar ese primer loop con **3 Chocotortas**.
 
-- antiguo nombre: `Intaxis`;
-- project ref: `fubpzfpystsxmgpqjjol`;
-- estado verificado el 21/09/2026: `ACTIVE_HEALTHY`;
-- no se modificó NoVen, Barberos ni ningún otro proyecto.
+---
 
-Reconversión ejecutada:
+## 2. Regla de producto vigente
 
-1. `reset_intaxis_for_agentic_pymes` — elimina el esquema público heredado de taxis y sus políticas de Storage.
-2. `clear_intaxis_auth_users` — elimina los tres usuarios heredados de Intaxis.
-3. `agentic_pymes_0001_mi_negocio` — crea el núcleo empresarial.
-4. `agentic_pymes_0002_real_specialist_agents` — agrega trazabilidad de especialistas.
-5. `agentic_pymes_0003_agent_run_orchestration` — agrega plan de delegación y contador de especialistas.
-6. `agentic_pymes_0004_fk_indexes` — agrega índices compuestos recomendados por Supabase Advisor.
+Toda decisión nueva pasa por el filtro de `PRODUCT_VISION.md`:
 
-Validación posterior:
+- reducir coordinación/cálculo/seguimiento manual del propietario;
+- cerrar un loop real antes de agregar otra capa;
+- dejar estado o evidencia persistente;
+- mantener el núcleo genérico;
+- producir progreso verificable.
 
-- 12 tablas públicas;
-- RLS habilitado en 12/12;
-- 12 políticas públicas;
-- 0 políticas heredadas en Storage;
-- 0 usuarios heredados;
-- 2 buckets y 7 objetos físicos antiguos continúan en Storage, sin políticas de acceso. Supabase bloquea su borrado SQL y exige usar Storage API; quedan como limpieza física pendiente.
+No se construyen nuevas superficies sólo porque sean técnicamente posibles.
 
-El aviso de seguridad de Supabase sobre exposición GraphQL a usuarios autenticados es esperado: las tablas están otorgadas a `authenticated` pero cada fila está protegida por RLS. No existe acceso para `anon` según el esquema aplicado.
+---
 
-## Contrato de salida de especialistas
+## 3. Equipo agentic real
 
-Todos los especialistas responden con:
+Existen 8 agentes persistentes:
 
-- `summary`;
-- `findings[]`;
-- `evidence[]` con claim, source, source_type y date;
-- `risks[]`;
-- `recommendation`;
-- `data_gaps[]`;
-- `confidence`;
-- `authorization_required`.
+1. Director Agentic Pymes.
+2. Mercado, Audiencia y Crecimiento.
+3. Producto y Experiencia.
+4. Caja y Rentabilidad.
+5. Ventas y Clientes.
+6. Producción y Abastecimiento.
+7. Calidad y Cumplimiento.
+8. Información y Decisiones.
 
-## Estado real de validación end-to-end
+### Routing vigente de modelos
 
-La base Supabase ya está preparada, pero **el equipo todavía no se declara operativo en producción** hasta completar:
+Política: `reliability-first-v1`.
 
-1. configurar en Netlify `OPENAI_API_KEY`, `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY`;
-2. iniciar sesión por Magic Link y crear `Postres Experiencia` como primer `business`;
-3. ejecutar una misión real y comprobar que el Director activa al menos dos especialistas;
-4. verificar en `specialist_runs` que cada participación tenga `openai_agent_id`, `openai_session_id`, tarea y resultado real;
-5. comprobar que la síntesis final mencione exclusivamente a los especialistas realmente ejecutados.
+- Director → `gpt-5.6-sol`, reasoning `high`.
+- Mercado → `gpt-5.6-sol`, `high`.
+- Producto → `gpt-5.6-sol`, `high`.
+- Caja → `gpt-5.6-sol`, `high`.
+- Calidad → `gpt-5.6-sol`, `high`.
+- Información → `gpt-5.6-sol`, `high`.
+- Producción → `gpt-5.6-terra`, `high`.
+- Ventas → `gpt-5.6-terra`, `medium`.
 
-Según la regla de producto, recién después de esa prueba end-to-end diremos que el equipo agentic está operativo.
+Luna no participa actualmente como agente que emite decisiones materiales. El ahorro tecnológico se busca evitando llamadas/especialistas innecesarios, no degradando decisiones relevantes.
 
-## Riesgo heredado conocido
+### Orquestación
 
-El historial Git de Intaxis tuvo un secreto Mapbox expuesto. Borrar los archivos actuales no borra el historial. Ese secreto no debe reutilizarse y debe permanecer revocado.
+El Director opera en dos fases:
 
-## Próximo corte
+- `PLAN`: elige sólo especialistas cuyo aporte puede cambiar la decisión;
+- `SÍNTESIS`: integra únicamente resultados realmente ejecutados.
 
-1. Configurar variables de entorno de Netlify.
-2. Verificar autenticación + RLS end-to-end.
-3. Crear Postres Experiencia como negocio piloto.
-4. Ejecutar y auditar la primera misión multiagente real.
-5. Completar recetas editables desde UI.
-6. Calcular costo real por receta y margen por producto.
-7. Completar el primer circuito: producto → receta → costo → stock → capacidad → análisis multiagente → decisión.
-8. Después: Radar de Mercado y campañas con hipótesis/resultado.
+Los especialistas tienen salida JSON estructurada y cada participación queda trazada en `specialist_runs`.
+
+---
+
+## 4. Conversación del Director
+
+### Construido
+
+- Existe un `agent_thread` activo por negocio.
+- Se conserva `provider_session_id`, por lo que la conversación puede continuar entre turnos.
+- Antes de cada misión se vuelve a cargar el estado estructurado de `Mi Negocio`.
+- El Director recibe contexto reciente de misiones completadas de forma acotada.
+- Para pilotos se le exige usar formulaciones ya existentes, hacer cálculos y pedir sólo hechos faltantes.
+- Los hechos reales nuevos pueden convertirse en acciones internas persistentes.
+
+### Comportamiento esperado
+
+El propietario debe poder comenzar con una frase mínima:
+
+> Quiero hacer 3 chocotortas.
+
+El Director debería responder progresivamente, por ejemplo identificando la formulación existente, preguntando qué insumos hay, luego qué precios se pagaron, guardando cada hecho y continuando hasta tener suficiente información.
+
+### Pendiente de validación
+
+La experiencia conversacional natural todavía **no fue probada end-to-end con el build 0.13.0**. Cada turno actualmente ejecuta planificación + especialistas necesarios + síntesis; hay que comprobar que el Director no convierta preguntas simples en informes innecesarios ni active especialistas caros sin necesidad.
+
+La prueba correcta no será un prompt grande preparado. Será empezar sólo con:
+
+> `Quiero hacer 3 chocotortas.`
+
+---
+
+## 5. Mi Negocio y persistencia operativa
+
+El núcleo ya modela:
+
+- negocios;
+- productos;
+- ingredientes;
+- recetas y componentes;
+- movimientos de inventario;
+- capacidad;
+- decisiones;
+- hipótesis;
+- conversaciones del Director;
+- acciones y políticas;
+- pedidos y pagos;
+- clientes/canales;
+- marketing/contenido/atribución;
+- señales de tendencias;
+- tareas operativas.
+
+### Ingreso agentic de hechos reales · PR #37
+
+Se agregaron dos acciones internas:
+
+#### `record_business_inputs`
+
+Puede convertir hechos explícitos del propietario en:
+
+- `ingredients`;
+- costo unitario/moneda/fuente/fecha;
+- `inventory_movements` cuando realmente ingresó stock.
+
+Tiene trazabilidad por `source_action_request_id` e idempotencia para evitar duplicados de una misma acción.
+
+Política actual:
+
+- modo `autonomous`;
+- confianza mínima `0.90`;
+- sólo hechos explícitos del propietario;
+- sin efecto externo.
+
+#### `materialize_development_recipe`
+
+Convierte un blueprint real ya existente en:
+
+- `recipes` con estado `draft`;
+- `recipe_items` ligados a ingredientes;
+- trazabilidad al blueprint y a la acción.
+
+Nunca convierte automáticamente una receta en `test` o `approved`.
+
+Política actual:
+
+- modo `autonomous`;
+- confianza mínima `0.90`;
+- requiere blueprint real;
+- sólo `draft`;
+- sin efecto externo.
+
+### Migración
+
+`0018_agentic_fact_ingestion.sql` fue aplicada en Supabase producción y se verificaron las columnas/políticas correspondientes.
+
+---
+
+## 6. Eventos, acciones y autonomía
+
+### Eventos
+
+Existe `business_events` con:
+
+- `business_id`;
+- `event_type`;
+- `source`;
+- `external_id` para idempotencia;
+- `payload`;
+- estado de procesamiento;
+- timestamps.
+
+Ya se generan eventos internos, por ejemplo en handoffs de desarrollo/enriquecimiento.
+
+**Pendiente:** todavía no existe un dispatcher universal donde cualquier evento relevante (`order.received`, `stock.low`, `payment.paid`, `delivery.overdue`, etc.) despierte automáticamente al Director. La capa existe; la activación empresarial general todavía no.
+
+### Ledger de acciones
+
+`agent_action_requests` conserva:
+
+- acción propuesta;
+- agente/run de origen;
+- fundamento;
+- confianza;
+- riesgo;
+- monto estimado;
+- política aplicada;
+- veredicto de política;
+- autorización humana cuando corresponde;
+- estado de ejecución;
+- resultado técnico;
+- error.
+
+### Políticas
+
+`autonomy_policies` modela por negocio:
+
+- `action_type`;
+- `mode`: `autonomous` / `approval` / `blocked`;
+- confianza mínima;
+- monto máximo;
+- condiciones;
+- estado activo.
+
+El runtime evalúa de forma determinística riesgo, confianza, modo y límites antes de ejecutar.
+
+Políticas vigentes verificadas:
+
+- `market_research` → autónoma, min 0.70;
+- `create_content_draft` → autónoma, min 0.75;
+- `create_operation_task` → autónoma, min 0.85 + receta/stock/capacidad;
+- `record_business_inputs` → autónoma, min 0.90;
+- `materialize_development_recipe` → autónoma, min 0.90;
+- `reply_customer_routine` → aprobación;
+- `create_order` → aprobación;
+- `create_payment_link` → aprobación;
+- `publish_content` → aprobación;
+- `paid_ad_spend` → bloqueada.
+
+**Pendiente arquitectónico:** versionar políticas para poder reconstruir exactamente qué versión autorizó una acción histórica.
+
+---
+
+## 7. Descubrimiento y desarrollo de ofertas
+
+### PR #27 · controlador único de Descubrir
+
+- Un único controlador integrado.
+- Sin múltiples monkey-patches/interceptores paralelos.
+- Lectura autenticada con RLS.
+- Estados claros de loading/error/selección.
+- Guard de CI contra regresión a múltiples controladores.
+
+### PR #28 · desarrollo técnico automático
+
+Después de confirmar candidatos:
+
+**selección → Producto → Producción → Calidad → ficha técnica persistida**.
+
+No requiere un segundo prompt del propietario.
+
+### PR #29 · reliability-first
+
+Se corrigió el routing de modelos para priorizar confiabilidad y se agregaron guards de CI.
+
+### PR #30 / #31 · oferta enriquecida y experiencia humana
+
+- estrategia visual fundamentada en evidencia;
+- referencias de mercado;
+- imagen aspiracional separada de foto real;
+- instrucciones humanas separadas del detalle técnico;
+- galería en Mi Negocio;
+- foto real futura como `primary_media`;
+- exportación enriquecida.
+
+### PR #32 · selección → Mi Negocio
+
+Una oportunidad seleccionada se convierte inmediatamente en oferta `draft` dentro del gemelo operativo, sin esperar receta/costo/calidad final.
+
+### PR #33 · handoff backend automático
+
+Al terminar desarrollo técnico se encola enriquecimiento sin depender de que el propietario vuelva a abrir Descubrir.
+
+### PR #34 · reanudación por etapas
+
+Un enrichment parcial reutiliza etapas ya persistidas y reintenta sólo lo faltante.
+
+### PR #35 · semántica de evidencia
+
+La UI y los prompts distinguen qué demuestra cada fuente:
+
+- oferta local;
+- referencia de formato;
+- referencia visual;
+- tendencia;
+- precio observado;
+- contexto competitivo/mercado.
+
+También diferencia producto específico, página de comercio, categoría, artículo, etc., evitando presentar una fuente como evidencia de algo que no prueba.
+
+### PR #36 · preparación agentic de piloto
+
+Los agentes reciben la formulación de desarrollo ya existente y, para una cantidad pedida por el propietario:
+
+- Producto escala la formulación;
+- Producción cruza necesidades con compras/stock;
+- Caja calcula economía sólo con datos reales;
+- Calidad se activa cuando puede bloquear la prueba;
+- el propietario aporta hechos, no cálculos.
+
+### PR #37 · hechos reales + filtro de visión
+
+- persistencia agentic de compras/stock/costos;
+- materialización segura de recetas `draft`;
+- filtro obligatorio de visión en `PRODUCT_VISION.md` y en el Director;
+- build `0.13.0-agentic-fact-ingestion`.
+
+---
+
+## 8. Estado real del piloto Postres Experiencia
+
+Supabase producción verificado en este corte:
+
+- **3 productos**;
+- **0 ingredientes persistidos**;
+- **0 recetas persistidas**;
+- **0 recipe_items**;
+- **0 movimientos de inventario**;
+- **0 acciones `record_business_inputs` ejecutadas**;
+- **0 acciones `materialize_development_recipe` ejecutadas**.
+
+Por lo tanto, el nuevo loop de ingreso agentic **está implementado pero todavía no probado con datos reales**.
+
+### Ofertas existentes
+
+Las tres están en estado comercial `draft`, sin `sell_price`, con fase `needs_data` y blueprint de 6 unidades × 250 g:
+
+- Chocotorta en lata transparente.
+- Tiramisú clásico en lata transparente.
+- Cheesecake frío de frutos rojos en envase transparente.
+
+### Chocotorta · formulación de banco actual
+
+Blueprint real:
+
+- 378 g galletitas de chocolate;
+- 525 g dulce de leche repostero;
+- 525 g queso crema entero;
+- 136,5 g leche;
+- 10,5 g cacao amargo;
+- rendimiento base: 6 unidades de 250 g.
+
+Estado:
+
+- `approval_status = review`;
+- `development_status = needs_data`;
+- no es receta comercial aprobada;
+- no existe vida útil validada.
+
+### Primer micro-piloto decidido
+
+Objetivo físico: **3 unidades**.
+
+Escalado matemático de la formulación de banco:
+
+- 189 g galletitas;
+- 262,5 g dulce de leche repostero;
+- 262,5 g queso crema;
+- 68,25 g/ml aprox. de leche;
+- 5,25 g cacao;
+- 3 envases.
+
+Este escalado es una hipótesis de trabajo para validación física, no una aprobación comercial.
+
+### Hechos reales ya aportados por el propietario, todavía NO persistidos en Mi Negocio
+
+Estos datos se conservarán como checkpoint para la prueba conversacional, pero el sistema debe ingresarlos mediante `record_business_inputs` cuando se ejecute la misión real:
+
+- Chocolinas: 500 g comprados por ARS 5.400.
+- Queso crema: 580 g totales por ARS 6.080 netos.
+- Dulce de leche repostero: 400 g por ARS 3.800 netos.
+- Leche entera 1 L: referencia observada ARS 2.136; debe distinguirse referencia de compra real si corresponde.
+- Envase transparente + tapa: USD 0,60 por unidad.
+- Cacao: costo real todavía faltante.
+
+La carne/“aguja” observada en el ticket no pertenece al negocio y debe ignorarse.
+
+No se toma como costo final del producto ningún cálculo manual previo. Caja debe recalcular desde hechos persistidos y, luego del piloto, reemplazar consumos teóricos por consumos/mermas/rendimiento reales.
+
+---
+
+## 9. Calidad y medios visuales
+
+### Calidad
+
+La formulación técnica existe, pero la revisión de Calidad quedó incompleta porque el flujo histórico dependía de un `QUALITY_REVIEW_JSON` embebido en texto y luego un retry chocó con límite de uso/facturación de OpenAI.
+
+No se debe declarar:
+
+- vida útil;
+- seguridad final;
+- aprobación comercial;
+- condiciones definitivas de conservación;
+
+hasta que Calidad cierre con evidencia suficiente y/o intervención profesional cuando corresponda.
+
+### Imágenes aspiracionales
+
+Las imágenes aspiracionales fallaron por permiso/scope de API de imágenes (`api.model.images.request`). Esto es independiente del bloqueo de Calidad.
+
+Una imagen aspiracional es sólo una hipótesis comercial visual. La foto real del propietario debe convertirse en `primary_media` cuando exista.
+
+---
+
+## 10. Multi-negocio y verticales
+
+### Lo que existe
+
+- Las entidades principales usan `business_id`.
+- RLS aísla información por negocio/propietario.
+- Las políticas, eventos, acciones, pedidos, pagos y datos operativos son tenant-aware.
+- `business_profiles` contiene `industry`, `business_model`, `offer_mode`, `target_market`, `discovery_context`, `operational_context`, `terminology` y `vertical_config`.
+- Ese perfil entra en el contexto de agentes y Descubrimiento.
+
+### Lo que falta
+
+- El runtime actual obtiene el primer negocio accesible (`limit(1)`); todavía no existe una selección madura de negocio activo para un propietario con varias empresas.
+- `vertical_config` es flexible pero todavía no es un paquete versionado de capacidades/workflows/reglas por vertical.
+
+Conclusión: la arquitectura es genérica y tenant-aware, pero la experiencia multi-negocio y los verticales versionados todavía no están cerrados.
+
+---
+
+## 11. Dinero y tiempo
+
+Ya existen primitivas reales para:
+
+- `sales_orders` con pipeline comercial/operativo;
+- `sales_order_items`;
+- `payment_intents`;
+- `capacity_settings`;
+- `operation_tasks` y fechas de entrega;
+- preflight de producción contra receta, stock y capacidad;
+- campañas, contenido y atribución.
+
+Todavía no existe un ledger contable/caja completo ni un motor universal de agenda/reservas para todos los verticales. No deben presentarse esas capacidades como terminadas.
+
+---
+
+## 12. Aprendizaje
+
+Ésta es la brecha arquitectónica más clara después de cerrar el piloto físico.
+
+Hoy existen `business_hypotheses`, `business_decisions`, resultados técnicos de acciones y trazas, pero no existe todavía un mecanismo canónico que conecte de forma automática:
+
+**supuesto → acción/intervención → resultado esperado → resultado observado → diferencia → aprendizaje → cambio propuesto**.
+
+Ejemplo esperado para Chocotorta:
+
+- merma supuesta: 5 %;
+- merma real medida: X %;
+- tiempo supuesto: Y;
+- tiempo real: Z;
+- costo teórico: A;
+- costo real: B;
+- consecuencia: proponer nueva versión de receta/costo/proceso.
+
+El aprendizaje v1 debe ser explícito, trazable y auditable. No implica que el modelo reescriba prompts o políticas autónomamente.
+
+---
+
+## 13. Capa de eventos · estado real
+
+La tabla y algunos productores de eventos existen. Falta convertirla en el sistema nervioso completo.
+
+Objetivo posterior al primer loop físico:
+
+**pedido / pago / stock / tarea / fecha / resultado → `business_event` → evaluación del Director → política → acción**.
+
+No se construirá un segundo bus de eventos. Se evolucionará `business_events` existente.
+
+---
+
+## 14. Estado de despliegue y pruebas
+
+### Verificado
+
+- PR #36 fusionado.
+- PR #37 fusionado.
+- `main` contiene build `0.13.0-agentic-fact-ingestion`.
+- CI de PR #37: syntax check y chat transport smoke en verde.
+- Deploy Preview del PR #37 en verde.
+- Migración 0018 aplicada en Supabase producción.
+- Políticas nuevas verificadas en base real.
+
+### No verificado en este checkpoint
+
+- No se verificó de forma independiente que Netlify producción ya esté sirviendo el build 0.13.0.
+- No se ejecutó la misión real porque el propietario informó que probablemente no tiene saldo disponible en la API de OpenAI.
+- Por lo tanto no se declara la nueva interacción como end-to-end aprobada.
+
+---
+
+## 15. Próxima prueba de aceptación
+
+Cuando haya saldo de API:
+
+1. abrir el Director;
+2. escribir únicamente: **`Quiero hacer 3 chocotortas.`**;
+3. no darle un prompt largo ni precargarle manualmente toda la información;
+4. comprobar si el Director usa el blueprint ya conocido;
+5. comprobar si pregunta progresivamente sólo los hechos faltantes;
+6. responder con las compras/costos reales;
+7. verificar que se ejecuten y persistan `record_business_inputs` y `materialize_development_recipe`;
+8. comprobar en Supabase que existan ingredientes, receta, recipe_items y movimientos reales;
+9. comprobar que Producción determine suficiencia/faltantes y Caja calcule costo sin pedir cálculos al propietario;
+10. verificar que Calidad no invente vida útil ni aprobación;
+11. producir físicamente las 3 unidades y registrar pesos, merma, tiempos, cierre, transporte y foto real;
+12. comparar teoría vs resultado y generar el primer aprendizaje persistente.
+
+### Criterio de éxito
+
+El propietario expresa intención y hechos del mundo físico. **El sistema coordina, pregunta lo mínimo, calcula, persiste, propone y deja trazabilidad.**
+
+Si el propietario tiene que trasladar datos entre pantallas, calcular proporciones/costos o decidir qué especialista llamar, el loop todavía no está cerrado.
+
+---
+
+## 16. Prioridad inmediata
+
+No agregar OCR de tickets, nuevos agentes, nuevas pantallas, otro bus de eventos ni verticales adicionales antes de esta prueba, salvo que aparezca un bloqueo mínimo imprescindible para cerrarla.
+
+Orden vigente:
+
+1. validar conversación progresiva + persistencia real del piloto;
+2. cerrar piloto físico con mediciones;
+3. implementar resultado observado → aprendizaje persistente;
+4. activar progresivamente el sistema desde `business_events`;
+5. recién después ampliar automatizaciones/conectores y madurar multi-negocio/verticales.
