@@ -1,7 +1,14 @@
+import {
+  executeMaterializeDevelopmentRecipe,
+  executeRecordBusinessInputs,
+} from './business-fact-actions.js';
+
 const ACTION_TYPES = new Set([
   'market_research',
   'create_content_draft',
   'create_operation_task',
+  'record_business_inputs',
+  'materialize_development_recipe',
   'reply_customer_routine',
   'create_order',
   'create_payment_link',
@@ -461,6 +468,10 @@ export async function executeActionRequest({ supabase, business, userId, request
       result = await executeCreateOperationTask({ supabase, business, userId, request });
     } else if (request.action_type === 'create_content_draft') {
       result = await executeContentDraft({ supabase, business, request });
+    } else if (request.action_type === 'record_business_inputs') {
+      result = await executeRecordBusinessInputs({ supabase, business, request });
+    } else if (request.action_type === 'materialize_development_recipe') {
+      result = await executeMaterializeDevelopmentRecipe({ supabase, business, request });
     } else {
       const unsupported = new Error(`Todavía no existe un ejecutor seguro para ${request.action_type}.`);
       unsupported.code = 'EXECUTOR_UNAVAILABLE';

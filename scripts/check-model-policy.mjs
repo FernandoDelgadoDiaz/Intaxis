@@ -23,8 +23,8 @@ if (!team.includes("model_policy: 'reliability-first-v1'")) {
   throw new Error('Falta metadata reliability-first-v1.');
 }
 
-if (!team.includes("const SPEC_VERSION = '4'")) {
-  throw new Error('La política reliability-first debe reconciliar los agentes persistentes con SPEC_VERSION 4.');
+if (!team.includes("const SPEC_VERSION = '5'")) {
+  throw new Error('La política reliability-first y el filtro agentic deben reconciliar los agentes persistentes con SPEC_VERSION 5.');
 }
 
 if (!cost.includes("'gpt-5.6-sol': { input: 4, cachedInput: 0.4, output: 20 }")) {
