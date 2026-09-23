@@ -14,7 +14,7 @@ function expectedBuildFromSource() {
   return match[1];
 }
 
-const baseUrl = String(args.url || process.env.PRODUCTION_URL || 'https://intaxis.netlify.app').replace(/\/$/, '');
+const baseUrl = String(args.url || process.env.PRODUCTION_URL || 'https://agenticpymes.netlify.app').replace(/\/$/, '');
 const expected = String(
   args.expected || process.env.EXPECTED_BUILD_VERSION || expectedBuildFromSource(),
 );
