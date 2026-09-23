@@ -1,0 +1,42 @@
+name: Agentic Pymes production build verify
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'netlify/**'
+      - 'scripts/verify-production-build.mjs'
+      - 'package.json'
+      - 'netlify.toml'
+      - '.github/workflows/production-build-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Wait for Netlify production and verify build
+        shell: bash
+        run: |
+          set -u
+          for attempt in $(seq 1 12); do
+            echo "Production verification attempt ${attempt}/12"
+            if node scripts/verify-production-build.mjs; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              sleep 15
+            fi
+          done
+          echo "Production did not expose the expected build within the verification window."
+          exit 1
