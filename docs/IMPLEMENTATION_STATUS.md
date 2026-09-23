@@ -1,6 +1,6 @@
 # Agentic Pymes · Estado real de implementación
 
-**Fecha de corte:** 22/09/2026  
+**Fecha de corte:** 23/09/2026  
 **Build en `main`:** `0.13.0-agentic-fact-ingestion`  
 **Repositorio:** `FernandoDelgadoDiaz/Intaxis`  
 **Producción:** `https://intaxis.netlify.app`  
@@ -28,7 +28,9 @@ Agentic Pymes ya no es sólo una colección de prompts o pantallas. Hoy existen 
 - primitivas de pedidos, pagos, canales, marketing, capacidad y tareas;
 - persistencia de hechos reales aportados por el propietario;
 - materialización de blueprints como recetas `draft`;
-- filtro permanente de visión agentic incorporado al Director.
+- filtro permanente de visión agentic incorporado al Director;
+- instrumentación read-only del piloto con snapshots antes/después, aceptación por etapas y medición de costo/especialistas;
+- verificación automática post-merge de que Netlify producción sirve el mismo `BUILD_VERSION` que `main`.
 
 Lo que **todavía no está demostrado de punta a punta** es que todas estas piezas operen juntas de forma natural sobre un negocio físico real sin trabajo manual innecesario del propietario.
 
@@ -248,7 +250,7 @@ Políticas vigentes verificadas:
 
 ---
 
-## 7. Descubrimiento y desarrollo de ofertas
+## 7. Descubrimiento, desarrollo y preparación del piloto
 
 ### PR #27 · controlador único de Descubrir
 
@@ -322,6 +324,29 @@ Los agentes reciben la formulación de desarrollo ya existente y, para una canti
 - filtro obligatorio de visión en `PRODUCT_VISION.md` y en el Director;
 - build `0.13.0-agentic-fact-ingestion`.
 
+### PR #39 · observabilidad y aceptación del piloto
+
+Sin agregar nueva lógica empresarial se incorporó:
+
+- `scripts/pilot-observability.mjs`: snapshot read-only de estado, acciones, runs, especialistas, uso/costo de IA, threads y políticas;
+- `scripts/check-pilot-acceptance.mjs`: comparación before/after con aceptación por etapas `conversation → recipe → facts → trace`;
+- self-test del checker dentro de `npm run check`;
+- `docs/PILOT_ACCEPTANCE.md` con protocolo y criterios de fallo/éxito;
+- `docs/EXTERNAL_AGENTIC_REFERENCES.md` con las lecciones verificadas de Café SofIA, Andon Café/Mona, Andon Market y Pion.
+
+El PR #39 pasó syntax CI y Deploy Preview antes de fusionarse.
+
+### PR #40 · verificación automática de producción
+
+Se agregó una verificación post-merge/push a `main` que:
+
+- deriva el `BUILD_VERSION` esperado directamente de `src/app.js`;
+- espera a Netlify producción;
+- consulta `/api/estado`;
+- falla si producción no sirve el mismo build o no declara persistencia Supabase.
+
+El PR #40 pasó syntax CI y Deploy Preview antes de fusionarse. El primer run post-merge verificó producción correctamente en el primer intento.
+
 ---
 
 ## 8. Estado real del piloto Postres Experiencia
@@ -336,7 +361,7 @@ Supabase producción verificado en este corte:
 - **0 acciones `record_business_inputs` ejecutadas**;
 - **0 acciones `materialize_development_recipe` ejecutadas**.
 
-Por lo tanto, el nuevo loop de ingreso agentic **está implementado pero todavía no probado con datos reales**.
+Por lo tanto, el nuevo loop de ingreso agentic **está implementado e instrumentado, pero todavía no probado con la misión real**.
 
 ### Ofertas existentes
 
@@ -486,6 +511,8 @@ Objetivo posterior al primer loop físico:
 
 No se construirá un segundo bus de eventos. Se evolucionará `business_events` existente.
 
+La investigación de SofIA/Pion/Mona refuerza este patrón, pero no cambia la prioridad: primero se prueba el loop real y después se decide si el dispatcher es el bloqueo siguiente.
+
 ---
 
 ## 14. Estado de despliegue y pruebas
@@ -494,23 +521,35 @@ No se construirá un segundo bus de eventos. Se evolucionará `business_events` 
 
 - PR #36 fusionado.
 - PR #37 fusionado.
+- PR #39 fusionado: observabilidad/aceptación del piloto + referencias externas documentadas.
+- PR #40 fusionado: verificación automática post-merge de producción.
 - `main` contiene build `0.13.0-agentic-fact-ingestion`.
-- CI de PR #37: syntax check y chat transport smoke en verde.
-- Deploy Preview del PR #37 en verde.
+- Syntax CI de PR #39 en verde.
+- Deploy Preview de PR #39 en verde.
+- Syntax CI de PR #40 en verde.
+- Deploy Preview de PR #40 en verde.
 - Migración 0018 aplicada en Supabase producción.
 - Políticas nuevas verificadas en base real.
+- Baseline del piloto verificado en Supabase: 3 productos y 0 ingredientes/recetas/recipe_items/movimientos/acciones nuevas antes de la misión.
+- Netlify producción verificado automáticamente el 23/09/2026: `/api/estado` respondió `build = 0.13.0-agentic-fact-ingestion`, `disponible = true` y `persistencia = supabase`.
+- Workflow post-merge `Agentic Pymes production build verify` quedó activo para futuras modificaciones relevantes de `main`.
 
-### No verificado en este checkpoint
+### Todavía no verificado
 
-- No se verificó de forma independiente que Netlify producción ya esté sirviendo el build 0.13.0.
-- No se ejecutó la misión real porque el propietario informó que probablemente no tiene saldo disponible en la API de OpenAI.
-- Por lo tanto no se declara la nueva interacción como end-to-end aprobada.
+- No se ejecutó la misión real `Quiero hacer 3 chocotortas.` con el build actual.
+- Por lo tanto no se declara todavía aprobada la conversación progresiva, la persistencia agentic real ni el loop end-to-end.
 
 ---
 
 ## 15. Próxima prueba de aceptación
 
-Cuando haya saldo de API:
+Antes de hablar con el Director se toma un snapshot read-only:
+
+```bash
+npm run pilot:snapshot -- --out=before.json
+```
+
+Luego, con API disponible:
 
 1. abrir el Director;
 2. escribir únicamente: **`Quiero hacer 3 chocotortas.`**;
@@ -519,11 +558,27 @@ Cuando haya saldo de API:
 5. comprobar si pregunta progresivamente sólo los hechos faltantes;
 6. responder con las compras/costos reales;
 7. verificar que se ejecuten y persistan `record_business_inputs` y `materialize_development_recipe`;
-8. comprobar en Supabase que existan ingredientes, receta, recipe_items y movimientos reales;
-9. comprobar que Producción determine suficiencia/faltantes y Caja calcule costo sin pedir cálculos al propietario;
-10. verificar que Calidad no invente vida útil ni aprobación;
-11. producir físicamente las 3 unidades y registrar pesos, merma, tiempos, cierre, transporte y foto real;
-12. comparar teoría vs resultado y generar el primer aprendizaje persistente.
+8. comprobar que Producción determine suficiencia/faltantes y Caja calcule costo sin pedir cálculos al propietario;
+9. verificar que Calidad no invente vida útil ni aprobación;
+10. producir físicamente las 3 unidades y registrar pesos, merma, tiempos, cierre, transporte y foto real.
+
+Después se toma el snapshot final:
+
+```bash
+npm run pilot:snapshot -- --out=after.json
+```
+
+Y se evalúa:
+
+```bash
+npm run pilot:accept -- --before=before.json --after=after.json --require=full
+```
+
+La aceptación automática revisa por etapas:
+
+**conversation → recipe → facts → trace**
+
+Además reporta cantidad de especialistas y costo tecnológico estimado para detectar sobre-orquestación. La naturalidad de la conversación —pregunta mínima, no pedir cálculos, no repetir información— sigue requiriendo observación humana porque no debe confundirse una respuesta larga y convincente con un loop agentic correcto.
 
 ### Criterio de éxito
 
@@ -535,7 +590,7 @@ Si el propietario tiene que trasladar datos entre pantallas, calcular proporcion
 
 ## 16. Prioridad inmediata
 
-No agregar OCR de tickets, nuevos agentes, nuevas pantallas, otro bus de eventos ni verticales adicionales antes de esta prueba, salvo que aparezca un bloqueo mínimo imprescindible para cerrarla.
+No agregar OCR de tickets, nuevos agentes, nuevas pantallas, otro bus de eventos, watchdog de autonomía ni verticales adicionales antes de esta prueba, salvo que aparezca un bloqueo mínimo imprescindible para cerrarla.
 
 Orden vigente:
 
