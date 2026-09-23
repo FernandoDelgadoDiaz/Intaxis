@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 const args = Object.fromEntries(
   process.argv.slice(2).map((arg) => {
     const [key, ...rest] = arg.replace(/^--/, '').split('=');
@@ -5,9 +7,16 @@ const args = Object.fromEntries(
   }),
 );
 
+function expectedBuildFromSource() {
+  const source = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+  const match = source.match(/export const BUILD_VERSION\s*=\s*['"]([^'"]+)['"]/);
+  if (!match?.[1]) throw new Error('No se pudo derivar BUILD_VERSION desde src/app.js.');
+  return match[1];
+}
+
 const baseUrl = String(args.url || process.env.PRODUCTION_URL || 'https://intaxis.netlify.app').replace(/\/$/, '');
 const expected = String(
-  args.expected || process.env.EXPECTED_BUILD_VERSION || '0.13.0-agentic-fact-ingestion',
+  args.expected || process.env.EXPECTED_BUILD_VERSION || expectedBuildFromSource(),
 );
 const candidates = [`${baseUrl}/api/estado`, `${baseUrl}/.netlify/functions/api/estado`];
 
