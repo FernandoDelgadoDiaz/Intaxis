@@ -7,7 +7,7 @@ if (!process.env.OPENAI_API_KEY) throw new Error('Falta OPENAI_API_KEY.');
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const VALID_SPECIALIST_KEYS = new Set(specialistKeys());
 const ACTION_MARKER = 'AGENTIC_ACTIONS_JSON:';
-const MAX_SPECIALISTS_PER_MISSION = 3;
+const MAX_SPECIALISTS_PER_MISSION = 4;
 const ACTION_TYPES = [
   'market_research',
   'create_content_draft',
@@ -143,6 +143,10 @@ export function extractDirectorActions(text) {
   }
 }
 
+function isPilotMission(mission) {
+  return /piloto|tanda|producir\s+\d+|hacer\s+\d+|cu[aá]nto.*compr|qu[eé].*compr|me\s+alcanza|ingrediente|receta|costo\s+por|precio\s+de\s+venta|precio\s+piloto|envase/i.test(String(mission || ''));
+}
+
 function fallbackPlan(mission) {
   const text = String(mission || '').toLowerCase();
   const planned = [];
@@ -151,11 +155,11 @@ function fallbackPlan(mission) {
   };
 
   if (/mercado|compet|redes|instagram|tiktok|campañ|audien|tendencia|marketing|publicidad|comunicaci/.test(text)) add('market_growth', 'Analizar mercado, audiencia y oportunidad comercial relacionada con la misión.');
-  if (/receta|sabor|producto|envase|presentaci|capa|textura|apertura|porci/.test(text)) add('product_experience', 'Evaluar producto, experiencia y prueba necesaria.');
-  if (/costo|precio|margen|rentab|caja|inversi|equilibrio|ganancia|tecnolog/.test(text)) add('finance_profitability', 'Evaluar impacto económico, margen, costo tecnológico y sensibilidad.');
+  if (/piloto|receta|sabor|producto|envase|presentaci|capa|textura|apertura|porci|tanda/.test(text)) add('product_experience', 'Usar la formulación de desarrollo vigente, escalarla al tamaño de piloto pedido y señalar qué debe validarse físicamente.');
+  if (/piloto|costo|precio|margen|rentab|caja|inversi|equilibrio|ganancia|tecnolog|ticket|factura/.test(text)) add('finance_profitability', 'Calcular costo y economía del piloto sólo con precios y cantidades reales disponibles, dejando explícitos los costos faltantes.');
   if (/venta|cliente|pedido|conversi|recompra|ticket|consulta/.test(text)) add('sales_customers', 'Evaluar impacto comercial y comportamiento de clientes.');
-  if (/stock|producci|capacidad|insumo|abaste|compra|envase|entrega|tanda/.test(text)) add('production_supply', 'Evaluar factibilidad operativa, stock, capacidad y abastecimiento.');
-  if (/calidad|inocu|habilit|norma|regula|frío|trazab|rotulad|higiene/.test(text)) add('quality_compliance', 'Evaluar riesgos de calidad, trazabilidad y cumplimiento.');
+  if (/piloto|stock|producci|capacidad|insumo|abaste|compra|comprar|alcanza|faltante|envase|entrega|tanda/.test(text)) add('production_supply', 'Cruzar la formulación escalada con stock/compras reales y decir qué alcanza, qué falta y qué comprar, sin inventar disponibilidad.');
+  if (/calidad|inocu|habilit|norma|regula|frío|trazab|rotulad|higiene|vida útil|conserv/.test(text)) add('quality_compliance', 'Evaluar riesgos de calidad, trazabilidad y cumplimiento.');
   if (/evidencia|compar|contradic|fuente|validar|decisi|informe/.test(text)) add('information_decisions', 'Auditar evidencia, contradicciones y datos faltantes.');
 
   if (!planned.length) add('information_decisions', 'Determinar qué evidencia existe, qué falta y qué especialistas adicionales serían necesarios.');
@@ -179,16 +183,25 @@ function parsePlan(raw, mission) {
 }
 
 function planPrompt(mission, businessContext) {
-  return `MODO PLAN\n\nESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN DEL PROPIETARIO\n${mission}\n\nElegí sólo especialistas cuyo trabajo pueda cambiar materialmente la decisión. Cada task debe ser concreta y no duplicar a otra especialidad. Evitá costo tecnológico innecesario. Activá como máximo ${MAX_SPECIALISTS_PER_MISSION} especialistas por misión.`;
+  const pilotRule = isPilotMission(mission)
+    ? `\n\nREGLA ESPECIAL · PREPARAR PILOTO\nLa misión es operativa sobre un piloto. Si ESTADO VIGENTE DE MI NEGOCIO contiene desarrollo_ofertas, esa formulación de banco es la base existente y NO debés volver a inventar una receta desde cero. Delegá el escalado de formulación a Producto y Experiencia, el cruce de cantidades/compras/faltantes a Producción y Abastecimiento y el costeo/precio a Caja y Rentabilidad cuando existan datos económicos. Activá Calidad sólo cuando la misión necesite resolver inocuidad, conservación, cadena de frío, rotulado o una condición que pueda bloquear la prueba. El propietario debe aportar hechos del mundo físico; los agentes hacen las cuentas.`
+    : '';
+  return `MODO PLAN\n\nESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN DEL PROPIETARIO\n${mission}\n\nElegí sólo especialistas cuyo trabajo pueda cambiar materialmente la decisión. Cada task debe ser concreta y no duplicar a otra especialidad. Evitá costo tecnológico innecesario. Activá como máximo ${MAX_SPECIALISTS_PER_MISSION} especialistas por misión.${pilotRule}`;
 }
 
 function specialistPrompt({ mission, businessContext, task, specialistName }) {
-  return `ESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN ORIGINAL DEL PROPIETARIO\n${mission}\n\nASIGNACIÓN DEL DIRECTOR PARA ${specialistName.toUpperCase()}\n${task}\n\nTrabajá sólo dentro de tu especialidad y respetá exactamente el esquema estructurado del agente.`;
+  const pilotRule = isPilotMission(mission)
+    ? `\n\nREGLA DE PILOTO\nUsá desarrollo_ofertas como definición previa del producto cuando corresponda. Si el propietario pide una cantidad distinta del rendimiento base, escalá matemáticamente las cantidades. No le pidas que calcule proporciones, costo unitario, faltantes o margen: hacé vos esas cuentas con los datos reales disponibles. Si una cifra necesaria no existe, devolvela como data_gap en vez de inventarla. Una formulación de banco sigue siendo de prueba y no equivale a producto aprobado para venta.`
+    : '';
+  return `ESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN ORIGINAL DEL PROPIETARIO\n${mission}\n\nASIGNACIÓN DEL DIRECTOR PARA ${specialistName.toUpperCase()}\n${task}\n\nTrabajá sólo dentro de tu especialidad y respetá exactamente el esquema estructurado del agente.${pilotRule}`;
 }
 
 function synthesisPrompt({ mission, businessContext, plan, specialistResults }) {
   const evidence = specialistResults.map((item) => ({ key: item.key, name: item.name, task: item.task, result: item.result }));
-  return `MODO SÍNTESIS\n\nESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN DEL PROPIETARIO\n${mission}\n\nPLAN DE DELEGACIÓN REAL\n${JSON.stringify(plan, null, 2)}\n\nRESULTADOS REALES DE LOS ESPECIALISTAS ACTIVADOS\n${JSON.stringify(evidence, null, 2)}\n\nIntegrá estos aportes. Si hay contradicciones, hacelas explícitas. En Especialistas activados mencioná exclusivamente los especialistas listados arriba.\n\nREGLA DE EJECUCIÓN AGENTIC\nAdemás del texto para el propietario, proponé únicamente acciones concretas que el sistema pueda evaluar mediante políticas. No inventes IDs, disponibilidad, montos, métricas, fuentes, URLs, imágenes ni fechas. Si faltan datos para ejecutar con seguridad, no propongas la acción ejecutable: explicá el faltante en el texto. Tipos permitidos: ${ACTION_TYPES.join(', ')}.\n\nPara market_research usalo únicamente cuando exista investigación suficiente para persistir un Descubrimiento de Producto real. El payload debe contener title, objective, scope, executive_summary, recommendation_notes, exactamente 3 candidates con rank 1, 2 y 3, y evidence. Cada candidato necesita rank, name y rationale; agregá concept, presentation, acceptance_score, acceptance_band, trend_strength, argentina_fit, visual_potential, production_complexity, conservation_risk y cost_complexity sólo cuando estén soportados. El orden es una hipótesis de aceptación comercial, nunca una garantía de ventas. Cada evidencia necesita candidate_rank, market_scope, source_name, source_url HTTPS real, source_type, evidence_type, claim, observed_at y confidence. Debe existir evidencia nacional e internacional y al menos una evidencia por candidato. Usá únicamente URLs reales recibidas de especialistas que hayan investigado con web_search. image_url e image_source_url son opcionales: si no existe una URL HTTPS directa y verificada, usá null. No inventes métricas de interacción ni ventas de competidores.\n\nPara create_operation_task el payload debe incluir product_id, quantity, due_at, title y opcionalmente priority, unit e instructions. Para create_content_draft debe incluir provider, content_type, concept, hook, body, call_to_action e hypothesis cuando estén disponibles.\nAl FINAL de tu respuesta, en una sola línea, agregá exactamente:\n${ACTION_MARKER}{"actions":[{"type":"market_research","title":"...","rationale":"...","confidence":0.0,"risk_level":"low","estimated_amount_ars":null,"payload":{}}]}\nSi no corresponde ninguna acción, usá ${ACTION_MARKER}{"actions":[]}. No escribas nada después de esa línea.`;
+  const pilotRule = isPilotMission(mission)
+    ? `\n\nSALIDA OBLIGATORIA PARA PILOTO\nEl propietario no debe hacer las cuentas. Integrá los resultados y entregale, cuando la evidencia lo permita: (1) cantidad objetivo; (2) formulación escalada con cantidades concretas; (3) qué compras/stock alcanzan y qué falta; (4) lista de compra mínima; (5) costo conocido del lote y por unidad, separando costos faltantes; (6) precio o rango de prueba sólo si Caja y Rentabilidad lo fundamentó con costos suficientes, indicando margen; (7) instrucciones humanas ya disponibles, sin reescribir la receta técnica innecesariamente; (8) controles que todavía impiden tratar la formulación como producto comercial aprobado. Si falta un dato, pedí sólo el hecho físico mínimo —por ejemplo peso del envase, precio pagado o stock—, nunca un cálculo que pueda hacer el sistema. Reutilizá contexto_reciente cuando contenga hechos aportados por el propietario en misiones anteriores.`
+    : '';
+  return `MODO SÍNTESIS\n\nESTADO VIGENTE DE MI NEGOCIO\n${businessContext}\n\nMISIÓN DEL PROPIETARIO\n${mission}\n\nPLAN DE DELEGACIÓN REAL\n${JSON.stringify(plan, null, 2)}\n\nRESULTADOS REALES DE LOS ESPECIALISTAS ACTIVADOS\n${JSON.stringify(evidence, null, 2)}\n\nIntegrá estos aportes. Si hay contradicciones, hacelas explícitas. En Especialistas activados mencioná exclusivamente los especialistas listados arriba.${pilotRule}\n\nREGLA DE EJECUCIÓN AGENTIC\nAdemás del texto para el propietario, proponé únicamente acciones concretas que el sistema pueda evaluar mediante políticas. No inventes IDs, disponibilidad, montos, métricas, fuentes, URLs, imágenes ni fechas. Si faltan datos para ejecutar con seguridad, no propongas la acción ejecutable: explicá el faltante en el texto. Tipos permitidos: ${ACTION_TYPES.join(', ')}.\n\nPara market_research usalo únicamente cuando exista investigación suficiente para persistir un Descubrimiento de Producto real. El payload debe contener title, objective, scope, executive_summary, recommendation_notes, exactamente 3 candidates con rank 1, 2 y 3, y evidence. Cada candidato necesita rank, name y rationale; agregá concept, presentation, acceptance_score, acceptance_band, trend_strength, argentina_fit, visual_potential, production_complexity, conservation_risk y cost_complexity sólo cuando estén soportados. El orden es una hipótesis de aceptación comercial, nunca una garantía de ventas. Cada evidencia necesita candidate_rank, market_scope, source_name, source_url HTTPS real, source_type, evidence_type, claim, observed_at y confidence. Debe existir evidencia nacional e internacional y al menos una evidencia por candidato. Usá únicamente URLs reales recibidas de especialistas que hayan investigado con web_search. image_url e image_source_url son opcionales: si no existe una URL HTTPS directa y verificada, usá null. No inventes métricas de interacción ni ventas de competidores.\n\nPara create_operation_task el payload debe incluir product_id, quantity, due_at, title y opcionalmente priority, unit e instructions. Para create_content_draft debe incluir provider, content_type, concept, hook, body, call_to_action e hypothesis cuando estén disponibles.\nAl FINAL de tu respuesta, en una sola línea, agregá exactamente:\n${ACTION_MARKER}{"actions":[{"type":"market_research","title":"...","rationale":"...","confidence":0.0,"risk_level":"low","estimated_amount_ars":null,"payload":{}}]}\nSi no corresponde ninguna acción, usá ${ACTION_MARKER}{"actions":[]}. No escribas nada después de esa línea.`;
 }
 
 export async function planDirectorMission({ providerSessionId, mission, businessContext }) {
