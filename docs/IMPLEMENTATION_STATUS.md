@@ -1,7 +1,7 @@
 # Agentic Pymes · Estado real de implementación
 
-**Fecha de corte:** 23/09/2026  
-**Build en `main`:** `0.13.1-ios-auth-abort`  
+**Fecha de corte:** 24/09/2026  
+**Build en `main`:** `0.13.2-auth-callback`  
 **Repositorio:** `FernandoDelgadoDiaz/Intaxis`  
 **Producción:** `https://agenticpymes.netlify.app`  
 **Supabase:** `fubpzfpystsxmgpqjjol`
@@ -112,7 +112,7 @@ El Director debería responder progresivamente, por ejemplo identificando la for
 
 ### Pendiente de validación
 
-La experiencia conversacional natural todavía **no fue probada end-to-end con el build 0.13.1**. Cada turno actualmente ejecuta planificación + especialistas necesarios + síntesis; hay que comprobar que el Director no convierta preguntas simples en informes innecesarios ni active especialistas caros sin necesidad.
+La experiencia conversacional natural todavía **no fue probada end-to-end con el build 0.13.2**. Cada turno actualmente ejecuta planificación + especialistas necesarios + síntesis; hay que comprobar que el Director no convierta preguntas simples en informes innecesarios ni active especialistas caros sin necesidad.
 
 La prueba correcta no será un prompt grande preparado. Será empezar sólo con:
 
@@ -355,6 +355,17 @@ El PR #40 pasó syntax CI y Deploy Preview antes de fusionarse. El primer run po
 - el verificador post-merge confirmó producción en el nuevo build;
 - la apertura desde iPhone volvió a funcionar.
 
+### PR #45 · persistencia del callback Auth antes del arranque
+
+- agrega `src/auth-callback.js` para procesar explícitamente el callback de Supabase antes del arranque normal del frontend;
+- soporta implicit flow (`access_token` + `refresh_token`) y PKCE (`code`);
+- persiste la sesión antes de que `web.js` consulte `getSession()`;
+- limpia tokens/códigos de la URL y conserva `invite` cuando existe;
+- agrega el módulo de callback a `npm run check`;
+- cambia el build a `0.13.2-auth-callback`;
+- syntax CI, chat transport smoke y Deploy Preview quedaron en verde;
+- no modifica agentes, lógica de negocio, RLS, políticas de autonomía ni datos del piloto.
+
 ### Cambio de identidad pública de Netlify
 
 El sitio productivo fue renombrado de `intaxis.netlify.app` a **`agenticpymes.netlify.app`**. El verificador de producción usa desde ahora el nuevo dominio como endpoint por defecto. El repositorio GitHub conserva por el momento el nombre técnico `Intaxis`.
@@ -536,17 +547,20 @@ La investigación de SofIA/Pion/Mona refuerza este patrón, pero no cambia la pr
 - PR #39 fusionado: observabilidad/aceptación del piloto + referencias externas documentadas.
 - PR #40 fusionado: verificación automática post-merge de producción.
 - PR #42 fusionado: corrección de arranque/Auth en iOS.
-- `main` contiene build `0.13.1-ios-auth-abort`.
+- PR #45 fusionado: persistencia del callback Supabase antes del arranque del frontend.
+- `main` contiene build `0.13.2-auth-callback`.
 - Syntax CI de PR #39 en verde.
 - Deploy Preview de PR #39 en verde.
 - Syntax CI de PR #40 en verde.
 - Deploy Preview de PR #40 en verde.
 - Syntax CI y chat transport smoke de PR #42 en verde.
 - Deploy Preview de PR #42 en verde.
+- Syntax CI y chat transport smoke de PR #45 en verde.
+- Deploy Preview de PR #45 en verde.
 - Migración 0018 aplicada en Supabase producción.
 - Políticas nuevas verificadas en base real.
-- Baseline del piloto verificado en Supabase: 3 productos y 0 ingredientes/recetas/recipe_items/movimientos/acciones nuevas antes de la misión.
-- Netlify producción verificado automáticamente el 23/09/2026 con `build = 0.13.1-ios-auth-abort`, `disponible = true` y `persistencia = supabase`.
+- Baseline del piloto verificado nuevamente en Supabase el 24/09/2026: 3 productos y 0 ingredientes/recetas/recipe_items/movimientos/acciones nuevas antes de la misión.
+- Netlify producción verificado automáticamente el 24/09/2026 con `build = 0.13.2-auth-callback`, `disponible = true` y `persistencia = supabase`.
 - El sitio productivo público es `https://agenticpymes.netlify.app`.
 - Workflow post-merge `Agentic Pymes production build verify` quedó activo para futuras modificaciones relevantes de `main`.
 
