@@ -1,7 +1,7 @@
 # Agentic Pymes · Equipo agentic real
 
-**Versión:** 1.0  
-**Fecha:** 21/09/2026  
+**Versión:** 1.1  
+**Fecha:** 24/09/2026  
 **Estado:** definición canónica del equipo operativo
 
 ## Arquitectura
@@ -23,7 +23,7 @@ El flujo operativo es:
 
 **Misión → Director planifica → especialistas seleccionados trabajan → resultados quedan registrados → Director sintetiza → respuesta final**.
 
-Se ejecutan hasta tres especialistas en paralelo para controlar costo, latencia y redundancia.
+El Director puede seleccionar **hasta cuatro especialistas por misión**. El objetivo sigue siendo controlar costo, latencia y redundancia: sólo deben activarse especialistas cuyo aporte pueda cambiar la decisión.
 
 ---
 
