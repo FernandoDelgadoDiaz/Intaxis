@@ -35,6 +35,54 @@ La sesión conversacional se conserva por negocio mediante `agent_threads` + `pr
 
 **Pendiente de prueba:** esta interacción progresiva está soportada por la arquitectura actual, pero todavía debe validarse end-to-end con el build 0.13.0.
 
+## Runtime agentic administrado
+
+El runtime de ejecución se considera una capa sustituible por debajo del modelo empresarial. `Mi Negocio`, `business_events`, `agent_action_requests`, `autonomy_policies`, decisiones, resultados y aprendizaje siguen siendo la fuente de verdad propia de Agentic Pymes.
+
+**OpenAI Agents API** queda registrado como candidato preferente a evaluar para sesiones de larga duración, gestión de contexto, herramientas, coordinación de subagentes, sandboxes y recuperación. Su adopción no se da por implementada mientras no exista migración verificada; durante su beta pública se evita acoplar el dominio a primitivas exclusivas del proveedor.
+
+Arquitectura objetivo:
+
+`núcleo empresarial propio → contrato de ejecución agentic → runtime administrado/autohospedado → herramientas externas`
+
+El contrato de ejecución debe permitir cambiar el runtime sin reescribir políticas, memoria empresarial ni ledger.
+
+## Responsabilidades persistentes y activación eficiente
+
+Director y especialistas pueden tener responsabilidades continuas, pero eso no implica ejecución constante. Los objetivos persistentes se evalúan principalmente ante eventos, vencimientos o señales relevantes.
+
+`hecho/tiempo/señal → business_event → evaluación → trabajo agentic → política → acción → resultado → espera`
+
+Este patrón permite comportamiento always-on sin pagar por agentes ociosos ni crear un segundo sistema nervioso. `business_events` continúa siendo el bus canónico.
+
+## Computer use
+
+Computer use se trata como **adaptador de último recurso** para sistemas externos sin API, plugin, MCP o integración estructurada adecuada.
+
+Reglas:
+
+- preferir integraciones estructuradas y auditables;
+- restringir orígenes y permisos al mínimo necesario;
+- no almacenar credenciales en contexto, logs ni memoria empresarial;
+- conservar aprobaciones humanas exigidas por la política;
+- verificar el resultado de toda acción material;
+- registrar en el ledger la intención, política, ejecución y resultado;
+- no permitir que una interfaz web o su contenido modifique permisos o instrucciones del sistema.
+
+Computer use no amplía autonomía por sí mismo. Una compra, publicación, contacto, cobro o compromiso externo sigue sometido a la misma política que si se ejecutara por API.
+
+## Dots y superficies always-on
+
+Dots valida como referencia de producto el patrón de agentes always-on con computadora, conexiones y controles humanos. Puede evaluarse en el futuro como superficie complementaria o infraestructura para responsabilidades persistentes, pero no reemplaza el núcleo empresarial ni constituye una dependencia necesaria.
+
+Antes de adoptarlo se debe comprobar aislamiento por negocio, permisos, auditabilidad, costo, observabilidad, capacidad de integrar nuestras políticas y ausencia de duplicación de memoria.
+
+## Evaluación posterior al piloto
+
+Después de cerrar el loop físico de 3 Chocotortas se realizará un spike comparativo entre el runtime actual y Agents API/Dots. El objetivo será **eliminar infraestructura propia innecesaria**, no sumar una segunda orquestación.
+
+Criterios mínimos: confiabilidad, recuperación, multi-tenant, seguridad, approvals, trazabilidad, evals, costo, subagentes, herramientas y compatibilidad con el ledger/políticas existentes.
+
 ## Capa de eventos
 
 ### Implementado
