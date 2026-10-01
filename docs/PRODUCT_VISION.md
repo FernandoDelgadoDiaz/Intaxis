@@ -1,7 +1,7 @@
 # Agentic Pymes · Visión de producto
 
-**Versión:** 1.2  
-**Fecha:** 22/09/2026  
+**Versión:** 1.3  
+**Fecha:** 01/10/2026  
 **Estado:** fuente rectora de producto en el repositorio
 
 ## Decisión central
@@ -268,6 +268,57 @@ El núcleo debe desacoplarse de Postres Experiencia. Postres es la primera insta
 
 El objetivo es permitir que otro emprendimiento cargue su propia empresa —productos o servicios, costos, recursos, capacidad, clientes y operación— y reciba el mismo ciclo agentic sin tener que configurar o administrar agentes individualmente.
 
+## Infraestructura agentic administrada y responsabilidades continuas
+
+La aparición de infraestructura comercial para agentes de larga duración no cambia el cerebro de Agentic Pymes; permite separar con mayor claridad el **núcleo empresarial** de la **infraestructura de ejecución**.
+
+El activo propio y fuente de verdad empresarial permanece en:
+
+**Mi Negocio → eventos → Director/especialistas → decisión → política → acción → resultado → aprendizaje**
+
+El runtime que mantiene sesiones, contexto, herramientas, subagentes, sandboxes y recuperación debe tratarse como una capa reemplazable. **OpenAI Agents API es el candidato preferente a evaluar para esa capa**, por ofrecer infraestructura administrada para agentes de larga duración, pero mientras permanezca en beta pública no se convierte en dependencia arquitectónica irreversible ni justifica una migración anticipada.
+
+### Responsabilidades continuas
+
+La evolución objetivo no es mantener agentes consumiendo recursos permanentemente ni depender de que el propietario inicie cada revisión. Director y especialistas deben poder asumir **responsabilidades empresariales persistentes**: objetivos y límites que se evalúan cuando aparecen hechos, eventos, plazos o señales relevantes.
+
+- Producción y Abastecimiento: vigilar pedidos, stock, capacidad y entregas próximas.
+- Caja y Rentabilidad: vigilar costos, margen, caja y compromisos.
+- Ventas y Clientes: vigilar oportunidades, seguimientos y recompra.
+- Mercado: vigilar señales que justifiquen un experimento.
+- Calidad: detectar condiciones que impidan producir, entregar o vender de forma segura.
+
+La implementación preferida sigue siendo **event-driven**: un evento despierta evaluación y trabajo; no se mantiene actividad artificial sólo para simular presencia 24/7.
+
+### Jerarquía de herramientas externas
+
+Para actuar fuera del núcleo, la preferencia arquitectónica es:
+
+1. API, plugin, MCP o integración estructurada y auditable.
+2. Adaptador específico cuando la integración estructurada lo requiera.
+3. Computer use como fallback para sistemas sin integración adecuada.
+
+Computer use nunca elude `autonomy_policies`, aprobaciones, límites de gasto, precondiciones ni el ledger. Operar una interfaz visual no convierte una acción material en segura ni autónoma.
+
+### Dots como señal de producto, no dependencia del core
+
+El patrón de agentes always-on con computadora propia, conexiones a aplicaciones, permisos y revisión humana valida la dirección de producto de Agentic Pymes: el propietario define objetivos, límites y excepciones mientras el sistema mantiene responsabilidades. Dots puede evaluarse como superficie o runtime complementario cuando exista encaje técnico/comercial, pero **no sustituye Mi Negocio, la memoria estructurada, las políticas determinísticas, el ledger ni el aprendizaje empresarial**.
+
+### Regla de adopción tecnológica
+
+No se migra el runtime por novedad. Después de cerrar el primer loop físico de Postres Experiencia se comparará el runtime actual con Agents API/Dots en:
+
+- confiabilidad y recuperación;
+- aislamiento multi-negocio;
+- persistencia y trazabilidad;
+- subagentes y herramientas;
+- seguridad, permisos y aprobaciones;
+- costo por misión/venta;
+- observabilidad y evals;
+- cantidad de infraestructura propia que puede eliminarse sin perder control.
+
+La adopción sólo se justifica si reduce complejidad o intervención humana manteniendo o mejorando auditabilidad y seguridad.
+
 ## Prioridad de construcción
 
 1. Cerrar el primer circuito real completo y verificable usando `Mi Negocio` como memoria operativa.
@@ -282,4 +333,4 @@ El objetivo es permitir que otro emprendimiento cargue su propia empresa —prod
 
 Este documento es la fuente rectora de producto dentro del repositorio. Todo cambio sustancial debe modificar versión, fecha, decisión y motivo. Investigaciones o conversaciones no cambian la visión hasta quedar incorporadas aquí.
 
-**Motivo de versión 1.2:** consolidar como decisiones rectoras la interacción conversacional progresiva del Director, la activación futura por eventos, el ciclo empresarial canónico, el lugar explícito del aprendizaje, el modelo multi-negocio/vertical y la jerarquía de verdad entre visión, estado real y código.
+**Motivo de versión 1.3:** incorporar la separación explícita entre núcleo empresarial e infraestructura agentic administrada; establecer Agents API como runtime candidato a evaluar, responsabilidades continuas activadas preferentemente por eventos, jerarquía de integraciones con computer use como fallback y Dots como señal de producto sin convertir proveedores externos en fuente de verdad empresarial.
