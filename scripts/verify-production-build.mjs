@@ -20,6 +20,38 @@ const expected = String(
 );
 const candidates = [`${baseUrl}/api/estado`, `${baseUrl}/.netlify/functions/api/estado`];
 
+async function verifyPublishedAuthBundle() {
+  const source = fs.readFileSync(new URL('../src/auth-session.js', import.meta.url), 'utf8');
+  const expected = source.match(/export const AUTH_WEB_BUILD\s*=\s*['"]([^'"]+)['"]/)?.[1];
+  if (!expected) throw new Error('No se pudo leer AUTH_WEB_BUILD desde src/auth-session.js.');
+
+  const pageResponse = await fetch(`${baseUrl}/`, {
+    headers: { 'cache-control': 'no-cache', 'user-agent': 'agentic-pymes-build-verifier/1' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!pageResponse.ok) throw new Error(`Inicio de producción: HTTP ${pageResponse.status}`);
+  const html = await pageResponse.text();
+  const scripts = [...html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+\.js)["']/gi)].map((match) => match[1]);
+  if (!scripts.length) throw new Error('El sitio publicado no muestra ningún bundle de JavaScript.');
+
+  for (const script of scripts) {
+    const assetUrl = new URL(script, baseUrl);
+    if (assetUrl.origin !== new URL(baseUrl).origin) continue;
+    const assetResponse = await fetch(assetUrl, {
+      headers: { 'cache-control': 'no-cache', 'user-agent': 'agentic-pymes-build-verifier/1' },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!assetResponse.ok) continue;
+    const js = await assetResponse.text();
+    if (js.includes(expected)) {
+      console.log(`production auth bundle verified: ${expected}`);
+      return;
+    }
+  }
+  throw new Error(`Producción no publica el flujo de acceso ${expected}.`);
+}
+
+
 let lastError;
 for (const url of candidates) {
   try {
@@ -38,6 +70,7 @@ for (const url of candidates) {
     if (body?.disponible !== true || body?.persistencia !== 'supabase') {
       throw new Error(`Estado productivo inesperado: ${JSON.stringify(body)}.`);
     }
+    await verifyPublishedAuthBundle();
     console.log(`production build verified: ${body.build} · ${url}`);
     process.exit(0);
   } catch (error) {
