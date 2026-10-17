@@ -480,4 +480,4 @@ async function sendMission() {
   }
 }
 
-init();
+if (!window.__agenticAuthCallbackFailed) init();
