@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { AUTH_WEB_BUILD, AUTH_SESSION_MARKER, createBrowserAuthClient } from './auth-session.js';
 
 const root = document.querySelector('#app');
 let supabase;
@@ -23,13 +24,12 @@ async function init() {
     const configResponse = await fetch('/api/config');
     const config = await configResponse.json();
     if (!config.supabaseUrl || !config.supabasePublishableKey) throw new Error('La infraestructura todavía no está configurada.');
-    supabase = createClient(config.supabaseUrl, config.supabasePublishableKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' },
-    });
+    supabase = createBrowserAuthClient(createClient, config.supabaseUrl, config.supabasePublishableKey);
     const current = await supabase.auth.getSession();
     if (current.error) throw current.error;
     session = current.data.session;
     if (session) {
+      localStorage.setItem(AUTH_SESSION_MARKER, '1');
       await claimPendingInvite();
       await loadAppState();
     }
@@ -38,6 +38,7 @@ async function init() {
       // persisted session merely because the callback has not settled yet.
       session = nextSession;
       if (session) {
+        localStorage.setItem(AUTH_SESSION_MARKER, '1');
         Promise.resolve().then(claimPendingInvite).then(loadAppState).then(render).catch(showFatal);
       } else {
         state = { business: null, snapshot: null, access: null, operation: null, inviteUrl: null };
@@ -123,6 +124,7 @@ async function sendMagicLink(email) {
 
 function loginView() {
   const invited = Boolean(localStorage.getItem('agentic_pending_invite'));
+  const missingPreviousSession = Boolean(localStorage.getItem(AUTH_SESSION_MARKER));
   return `
     <div class="auth-shell">
       <section class="auth-showcase">
@@ -138,10 +140,11 @@ function loginView() {
         </div>
       </section>
       <section class="auth-panel">
-        <div class="login-card">
+        <div class="login-card" data-auth-build="${AUTH_WEB_BUILD}">
           <div class="brand"><div class="logo">AP</div><div class="brand-copy"><h1>Agentic Pymes</h1><p>${invited ? 'Acceso de operario' : 'Gestión inteligente para PyMEs'}</p></div></div>
           <h2>${invited ? 'Aceptar invitación' : 'Ingresá a tu empresa'}</h2>
           <p class="muted">Usamos un enlace seguro enviado por correo. No necesitás recordar otra contraseña.</p>
+          ${missingPreviousSession ? '<div class="notice warning">La sesión anterior no se pudo recuperar en este navegador. En iPhone, abrí el enlace de acceso y luego esta aplicación en Safari, fuera del navegador interno del correo o de otra app.</div>' : ''}
           <form id="login-form">
             <div class="field"><label>Correo electrónico</label><input id="login-email" type="email" autocomplete="email" required placeholder="tu@email.com"></div>
             <button class="primary" type="submit">Enviar enlace de acceso</button>
@@ -347,7 +350,10 @@ function bind() {
     render();
   }));
 
-  document.querySelector('#logout')?.addEventListener('click', () => supabase.auth.signOut());
+  document.querySelector('#logout')?.addEventListener('click', () => {
+    localStorage.removeItem(AUTH_SESSION_MARKER);
+    supabase.auth.signOut();
+  });
 
   document.querySelector('#bootstrap')?.addEventListener('click', async () => {
     await api('/api/mi-negocio/bootstrap', { method: 'POST', body: JSON.stringify({ name: 'Postres Experiencia' }) });
