@@ -23,14 +23,19 @@ async function init() {
     const configResponse = await fetch('/api/config');
     const config = await configResponse.json();
     if (!config.supabaseUrl || !config.supabasePublishableKey) throw new Error('La infraestructura todavía no está configurada.');
-    supabase = createClient(config.supabaseUrl, config.supabasePublishableKey);
+    supabase = createClient(config.supabaseUrl, config.supabasePublishableKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' },
+    });
     const current = await supabase.auth.getSession();
+    if (current.error) throw current.error;
     session = current.data.session;
     if (session) {
       await claimPendingInvite();
       await loadAppState();
     }
-    supabase.auth.onAuthStateChange((_event, nextSession) => {
+    supabase.auth.onAuthStateChange((event, nextSession) => {
+      // INITIAL_SESSION can fire after the first render. Never discard a valid
+      // persisted session merely because the callback has not settled yet.
       session = nextSession;
       if (session) {
         Promise.resolve().then(claimPendingInvite).then(loadAppState).then(render).catch(showFatal);
