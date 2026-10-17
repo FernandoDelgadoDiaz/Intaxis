@@ -57,6 +57,7 @@ if (callbackError || (accessToken && refreshToken) || authCode) {
     await finishMagicLink();
   } catch (error) {
     console.error('Magic link callback failed:', error?.message || 'unknown error');
+    window.__agenticAuthCallbackFailed = true;
     showAuthFailure();
   }
 }
