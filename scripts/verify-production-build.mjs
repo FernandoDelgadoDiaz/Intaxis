@@ -31,7 +31,7 @@ async function verifyPublishedAuthBundle() {
   });
   if (!pageResponse.ok) throw new Error(`Inicio de producción: HTTP ${pageResponse.status}`);
   const html = await pageResponse.text();
-  const scripts = [...html.matchAll(/<script\\b[^>]*\\bsrc\\s*=\\s*["']([^"']+\\.js)["']/gi)].map((match) => match[1]);
+  const scripts = [...html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+\.js)["']/gi)].map((match) => match[1]);
   if (!scripts.length) throw new Error('El sitio publicado no muestra ningún bundle de JavaScript.');
 
   for (const script of scripts) {
